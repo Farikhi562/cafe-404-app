@@ -97,6 +97,14 @@ def local_css():
             font-size: 2.5rem !important;
             color: #00E5FF !important;
             text-shadow: 0 0 10px rgba(0, 229, 255, 0.8);
+            @keyframes pulse-glow {
+                0% { text-shadow: 0 0 5px #00E5FF; }
+                50% { text-shadow: 0 0 20px #00E5FF, 0 0 30px #FF00CC; }
+                100% { text-shadow: 0 0 5px #00E5FF; }
+            }
+            div[data-testid="stMetricValue"] {
+                animation: pulse-glow 3s infinite;
+            }
         }
         div[data-testid="stMetricLabel"] {
             color: #aaa !important;
@@ -501,12 +509,21 @@ with tab2:
         daily_rev = df_tx.groupby(df_tx['Tanggal'].dt.date)['Total'].sum().reset_index()
         daily_rev.columns = ['Date', 'Revenue']
         
+        # --- Versi Perbaikan ---
         fig_area = px.area(daily_rev, x='Date', y='Revenue', template="plotly_dark")
-        fig_area.update_traces(line_color='#00E5FF', fill_color='rgba(0, 229, 255, 0.2)')
-        fig_area.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(family="Rajdhani"))
+
+# Gunakan dictionary untuk 'line' dan argumen 'fillcolor' yang tepat
+        fig_area.update_traces(
+            line=dict(color='#00E5FF'), 
+            fillcolor='rgba(0, 229, 255, 0.2)'
+        )
+
+        fig_area.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)', 
+            font=dict(family="Rajdhani")
+        )
         st.plotly_chart(fig_area, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
     with c2:
         st.markdown('<div class="neon-card">', unsafe_allow_html=True)
         st.markdown("#### 🍩 CATEGORY MATRIX (Sunburst)")
