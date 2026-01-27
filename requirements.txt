@@ -3,9 +3,11 @@ pandas
 numpy
 plotly
 scikit-learn
-matplotlib
-seaborn
 requests
 streamlit-lottie
 qrcode
 Pillow
+streamlit-extras
+streamlit-option-menu
+watchdog
+openpyxl
