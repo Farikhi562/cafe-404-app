@@ -2,6 +2,8 @@ streamlit
 pandas
 numpy
 plotly
+scikit-learn
 matplotlib
 seaborn
-scikit-learn
+requests
+streamlit-lottie
