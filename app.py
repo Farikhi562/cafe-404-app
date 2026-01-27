@@ -653,7 +653,7 @@ with tab4:
     VERSION: 5.0 (GOD MODE BUILD)
     KERNEL: PYTHON 3.9 + STREAMLIT
     GPU ACCELERATION: ACTIVE
-    DEVELOPER: [YOUR NAME]
+    DEVELOPER: MUHAMAD FAUZAN AL FARIKHI
     """)
     st.markdown('</div>', unsafe_allow_html=True)
 
