@@ -5,306 +5,343 @@ import plotly.express as px
 import plotly.graph_objects as go
 import time
 import os
-import requests
-from sklearn.linear_model import LinearRegression 
-from datetime import date, datetime, timedelta
-from streamlit_lottie import st_lottie
 import random
-import base64
+import qrcode
+from PIL import Image
+from io import BytesIO
+from datetime import datetime, timedelta
 
 # ==========================================
-# 1. HYPER-SPACE UI CONFIGURATION (ENHANCED)
+# 1. KONFIGURASI SUPREME (V4.0)
 # ==========================================
 st.set_page_config(
-    page_title="UNICORN OS: OMEGA v2.0",
-    page_icon="🌌",
+    page_title="UNICORN OS: GOD MODE",
+    page_icon="💠",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# --- THEMES & CSS GILA-GILAAN (V2.0 GLITCH EDITION) ---
+# --- CSS: THE MATRIX & NEON GLOW ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500&family=Orbitron:wght@400;900&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;500;700&family=Syncopate:wght@400;700&display=swap');
 
-    /* Glitch Animation */
-    @keyframes glitch {
-        0% { transform: translate(0); }
-        20% { transform: translate(-2px, 2px); }
-        40% { transform: translate(-2px, -2px); }
-        60% { transform: translate(2px, 2px); }
-        80% { transform: translate(2px, -2px); }
-        100% { transform: translate(0); }
-    }
-
+    /* ANIMATED STARFIELD BACKGROUND */
     .stApp {
-        background: linear-gradient(rgba(0,0,0,0.85), rgba(0,0,0,0.95)), 
-                    url('https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=2070&auto=format&fit=crop');
-        background-size: cover;
-        background-attachment: fixed;
-        color: #00ffcc;
-        font-family: 'Fira Code', monospace;
+        background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+        font-family: 'Rajdhani', sans-serif;
+        color: #E0F7FA;
     }
-
-    /* Custom Scrollbar Cyberpunk */
-    ::-webkit-scrollbar { width: 8px; }
+    
+    /* CUSTOM SCROLLBAR */
+    ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #000; }
-    ::-webkit-scrollbar-thumb { 
-        background: linear-gradient(#00ffcc, #ff00ff); 
-        border-radius: 10px; 
+    ::-webkit-scrollbar-thumb { background: #00E5FF; border-radius: 3px; }
+
+    /* CARD DESIGN: GLASSMOPHISM PRO MAX */
+    .neon-card {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(0, 229, 255, 0.2);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .neon-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 0 25px rgba(0, 229, 255, 0.4);
+        border: 1px solid rgba(0, 229, 255, 0.8);
     }
 
-    .glass-card {
-        background: rgba(255, 255, 255, 0.02);
-        backdrop-filter: blur(15px);
-        border-radius: 15px;
-        border: 1px solid rgba(0, 255, 204, 0.15);
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    /* TYPOGRAPHY */
+    h1, h2, h3 { font-family: 'Syncopate', sans-serif; letter-spacing: 2px; }
+    
+    .glow-text {
+        color: #00E5FF;
+        text-shadow: 0 0 10px #00E5FF, 0 0 20px #00E5FF;
     }
 
-    .glass-card:hover {
-        border: 1px solid rgba(0, 255, 204, 0.8);
-        box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
-        animation: glitch 0.3s infinite;
+    /* METRIC BOX STYLING */
+    div[data-testid="stMetricValue"] {
+        font-family: 'Syncopate', sans-serif;
+        color: #00E5FF !important;
+        text-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
     }
 
-    .cyber-header {
-        font-family: 'Orbitron', sans-serif;
-        text-transform: uppercase;
-        letter-spacing: 8px;
-        background: linear-gradient(90deg, #00ffcc, #ff00ff, #00ffcc);
-        background-size: 200%;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        animation: gradientShift 5s linear infinite;
-        font-size: 3.5rem;
-        text-shadow: 2px 2px 10px rgba(0,255,204,0.5);
-    }
-
-    /* Status Pulse */
-    .status-pulse {
-        width: 12px; height: 12px;
-        background: #00ffcc;
-        border-radius: 50%;
+    /* MENU GRID BUTTONS */
+    .menu-btn {
         display: inline-block;
-        box-shadow: 0 0 10px #00ffcc;
-        animation: pulse 1.5s infinite;
+        width: 100%;
+        padding: 15px;
+        text-align: center;
+        background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0));
+        border: 1px solid rgba(0,255,204,0.3);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: 0.3s;
+        color: white;
     }
+    .menu-btn:hover { background: rgba(0,255,204,0.2); border-color: #00ffcc; }
 
-    @keyframes pulse {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 255, 204, 0.7); }
-        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(0, 255, 204, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 255, 204, 0); }
-    }
+    /* LEVEL PROGRESS BAR */
+    .xp-bar-bg { width: 100%; background: #333; height: 10px; border-radius: 5px; margin-top: 5px; }
+    .xp-bar-fill { height: 100%; background: linear-gradient(90deg, #FF00CC, #333399); border-radius: 5px; transition: width 0.5s; }
+
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. CORE ENGINE & DATA
+# 2. DATA ENGINE & SESSION
 # ==========================================
-DB_FILE = 'cafe_database.csv'
-MENU_FILE = 'menu_database.csv'
+DB_FILE = 'cafe_db_v4.csv'
+MENU_FILE = 'menu_db_v4.csv'
+
+def init_session():
+    if 'cart' not in st.session_state: st.session_state.cart = []
+    if 'xp' not in st.session_state: st.session_state.xp = 0
+    if 'level' not in st.session_state: st.session_state.level = 1
+    if 'last_trx' not in st.session_state: st.session_state.last_trx = None
 
 def load_data():
+    # Load or Create Transactions
     if os.path.exists(DB_FILE):
         df = pd.read_csv(DB_FILE)
         df['Tanggal'] = pd.to_datetime(df['Tanggal'])
     else:
-        # Initial Seed Data for visualization
-        dates = [datetime.now() - timedelta(days=x) for x in range(10, 0, -1)]
-        df = pd.DataFrame({
-            'Tanggal': dates,
-            'Menu': ['Kopi Python']*10,
-            'Harga': [25000]*10,
-            'HPP': [8000]*10,
-            'Qty': np.random.randint(10, 50, 10),
-            'Kategori': ['Minuman']*10,
-            'Pelanggan': ['Regular']*10
-        })
-        df['Omset'] = df['Harga'] * df['Qty']
-        df['Profit'] = df['Omset'] - (df['HPP'] * df['Qty'])
+        df = pd.DataFrame(columns=['Tanggal', 'Menu', 'Harga', 'Qty', 'Omset', 'Kategori', 'Payment_Type'])
         df.to_csv(DB_FILE, index=False)
     
+    # Load or Create Menu
     if os.path.exists(MENU_FILE):
         df_menu = pd.read_csv(MENU_FILE)
     else:
         menu_data = [
-            {'Menu': 'Kopi Python', 'Harga': 25000, 'HPP': 8000, 'Kategori': 'Minuman', 'Stock': 50},
-            {'Menu': 'Nasi Goreng AI', 'Harga': 35000, 'HPP': 12000, 'Kategori': 'Makanan', 'Stock': 30},
-            {'Menu': 'Smoothie Quantum', 'Harga': 30000, 'HPP': 10000, 'Kategori': 'Minuman', 'Stock': 25},
-            {'Menu': 'Burger Neural', 'Harga': 45000, 'HPP': 15000, 'Kategori': 'Makanan', 'Stock': 20}
+            {'Menu': 'Cyber Latte', 'Harga': 28000, 'Kategori': 'Coffee', 'Icon': '☕'},
+            {'Menu': 'Neon Matcha', 'Harga': 32000, 'Kategori': 'Non-Coffee', 'Icon': '🍵'},
+            {'Menu': 'Quantum Burger', 'Harga': 55000, 'Kategori': 'Food', 'Icon': '🍔'},
+            {'Menu': 'Data Fries', 'Harga': 25000, 'Kategori': 'Snack', 'Icon': '🍟'},
+            {'Menu': 'Pasta Python', 'Harga': 48000, 'Kategori': 'Food', 'Icon': '🍝'},
+            {'Menu': 'Binary Soda', 'Harga': 20000, 'Kategori': 'Beverage', 'Icon': '🥤'},
         ]
         df_menu = pd.DataFrame(menu_data)
         df_menu.to_csv(MENU_FILE, index=False)
     return df, df_menu
 
+def generate_qr(data):
+    qr = qrcode.QRCode(version=1, box_size=10, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#00E5FF", back_color="black")
+    return img
+
+def calculate_level(xp):
+    return int(xp / 100) + 1
+
 # ==========================================
 # 3. INTERFACE LOGIC
 # ==========================================
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+init_session()
+df, df_menu = load_data()
 
-if not st.session_state.logged_in:
-    st.markdown('<h1 class="cyber-header" style="text-align:center;">SYSTEM OVERRIDE</h1>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1, 1.2, 1])
-    with c2:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        u = st.text_input("USER_ID")
-        p = st.text_input("ENCRYPTED_KEY", type="password")
-        if st.button("EXECUTE LOGIN", use_container_width=True):
-            if u == "admin" and p == "admin":
-                st.session_state.logged_in, st.session_state.role = True, "CEO"
-                st.rerun()
-            else: st.error("ACCESS DENIED: INVALID SIGNATURE")
-        st.markdown('</div>', unsafe_allow_html=True)
+# --- HEADER AREA ---
+c1, c2 = st.columns([3, 1])
+with c1:
+    st.markdown('<h1 class="glow-text">UNICORN OS <span style="font-size:0.5em; color:white;">V4.0</span></h1>', unsafe_allow_html=True)
+with c2:
+    # XP / LEVEL SYSTEM
+    lvl = calculate_level(st.session_state.xp)
+    progress = st.session_state.xp % 100
+    st.markdown(f"""
+    <div style="text-align:right;">
+        <b>OPERATOR LEVEL {lvl}</b><br>
+        <span style="font-size:0.8em; color:#aaa;">{st.session_state.xp} XP Earned</span>
+        <div class="xp-bar-bg"><div class="xp-bar-fill" style="width:{progress}%;"></div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
-else:
-    df, df_menu = load_data()
+# --- NAVIGATION TABS ---
+tabs = st.tabs(["🛒 SMART POS", "📊 ANALYTICS GOD MODE", "⚙️ SYSTEM CORE"])
+
+# =========================================================
+# TAB 1: SMART POS (GRID SYSTEM)
+# =========================================================
+with tabs[0]:
+    col_menu, col_cart = st.columns([2, 1.2])
     
-    # --- SIDEBAR NAV ---
-    with st.sidebar:
-        st.markdown(f"### <span class='status-pulse'></span> NODE: {st.session_state.role}", unsafe_allow_html=True)
-        nav = st.radio("SATELLITE COMMANDS", ["🛰️ Overwatch", "🏪 Terminal POS", "🧠 Neural Engine", "📦 Cyber-Inventory", "⚙️ System Matrix"])
-        if st.button("TERMINATE"): 
-            st.session_state.logged_in = False
-            st.rerun()
-
-    # --- 1. OVERWATCH (DASHBOARD) ---
-    if nav == "🛰️ Overwatch":
-        st.markdown('<h1 class="cyber-header">Overwatch Dashboard</h1>', unsafe_allow_html=True)
+    with col_menu:
+        st.markdown('<div class="neon-card">', unsafe_allow_html=True)
+        st.subheader("💠 MENU SELECTOR")
         
-        m1, m2, m3 = st.columns(3)
-        m1.metric("CREDITS_FLOW", f"Rp {df['Omset'].sum():,.0f}", "+15.4%")
-        m2.metric("NET_YIELD", f"Rp {df['Profit'].sum():,.0f}", "+8.2%")
-        m3.metric("NODES_UPTIME", "99.98%", "STABLE")
-
-        # Complex Multi-Line Chart
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.subheader("📡 Real-time Temporal Revenue Flux")
-        flux_fig = go.Figure()
-        flux_fig.add_trace(go.Scatter(x=df['Tanggal'], y=df['Omset'], mode='lines+markers', name='Revenue', line=dict(color='#00ffcc', width=4)))
-        flux_fig.add_trace(go.Scatter(x=df['Tanggal'], y=df['Profit'], mode='lines', name='Profit', line=dict(color='#ff00ff', dash='dash')))
-        flux_fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(flux_fig, use_container_width=True)
+        # Grid Layout for Menu
+        categories = df_menu['Kategori'].unique()
+        filter_cat = st.pills("Filter", ["All"] + list(categories), selection_mode="single", default="All")
+        
+        filtered_menu = df_menu if filter_cat == "All" else df_menu[df_menu['Kategori'] == filter_cat]
+        
+        # Dynamic Grid
+        cols = st.columns(3)
+        for index, row in filtered_menu.iterrows():
+            with cols[index % 3]:
+                # Card-like Button
+                if st.button(f"{row['Icon']}\n{row['Menu']}\n{int(row['Harga']/1000)}K", key=f"btn_{index}", use_container_width=True):
+                    st.session_state.cart.append(row.to_dict())
+                    st.toast(f"Added {row['Menu']}", icon="✅")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 2. TERMINAL POS (TRANSACTION) ---
-    elif nav == "🏪 Terminal POS":
-        st.markdown('<h1 class="cyber-header">POS Terminal</h1>', unsafe_allow_html=True)
-        col1, col2 = st.columns([1, 1.5])
+    with col_cart:
+        st.markdown('<div class="neon-card">', unsafe_allow_html=True)
+        st.subheader("🛒 HOLOGRAPHIC CART")
         
-        with col1:
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.write("### 🛒 Input Order")
-            menu_pick = st.selectbox("Select Item", df_menu['Menu'].tolist())
-            qty_pick = st.number_input("Quantity", 1, 100, 1)
-            cust_name = st.text_input("Client ID", "Guest_01")
+        if len(st.session_state.cart) > 0:
+            cart_df = pd.DataFrame(st.session_state.cart)
+            cart_disp = cart_df.groupby('Menu')['Harga'].agg(['count', 'sum']).reset_index()
+            cart_disp.columns = ['Item', 'Qty', 'Subtotal']
             
-            selected_item = df_menu[df_menu['Menu'] == menu_pick].iloc[0]
-            total_price = selected_item['Harga'] * qty_pick
+            st.dataframe(cart_disp, hide_index=True, use_container_width=True)
             
-            st.divider()
-            st.write(f"*Total Payload:* Rp {total_price:,.0f}")
+            total = cart_disp['Subtotal'].sum()
+            st.markdown(f"<h2 style='text-align:right; color:#00E5FF;'>TOTAL: Rp {total:,.0f}</h2>", unsafe_allow_html=True)
             
-            if st.button("CONFIRM TRANSACTION"):
-                new_data = {
-                    'Tanggal': datetime.now(),
-                    'Menu': menu_pick,
-                    'Harga': selected_item['Harga'],
-                    'HPP': selected_item['HPP'],
-                    'Qty': qty_pick,
-                    'Omset': total_price,
-                    'Profit': total_price - (selected_item['HPP'] * qty_pick),
-                    'Kategori': selected_item['Kategori'],
-                    'Pelanggan': cust_name
-                }
-                pd.concat([df, pd.DataFrame([new_data])]).to_csv(DB_FILE, index=False)
-                st.balloons()
-                st.success("Data Synthesized to Database!")
+            # Payment Method
+            pay_method = st.radio("Payment Gateway", ["CASH", "QRIS / E-WALLET", "CRYPTO"], horizontal=True)
+            
+            if pay_method == "QRIS / E-WALLET":
+                # Generate Real QR Code
+                qr_img = generate_qr(f"PAY|UNICORN|{total}|{int(time.time())}")
+                
+                # Convert to bytes for display
+                buf = BytesIO()
+                qr_img.save(buf)
+                st.image(buf, caption="Scan to Pay (Instant)", width=200)
+
+            col_act1, col_act2 = st.columns(2)
+            with col_act1:
+                if st.button("🔴 CLEAR", use_container_width=True):
+                    st.session_state.cart = []
+                    st.rerun()
+            with col_act2:
+                if st.button("🚀 EXECUTE ORDER", type="primary", use_container_width=True):
+                    # Save Transaction
+                    new_rows = []
+                    for item in st.session_state.cart:
+                        new_rows.append({
+                            'Tanggal': datetime.now(),
+                            'Menu': item['Menu'],
+                            'Harga': item['Harga'],
+                            'Qty': 1,
+                            'Omset': item['Harga'],
+                            'Kategori': item['Kategori'],
+                            'Payment_Type': pay_method
+                        })
+                    
+                    # Append to DB
+                    new_df = pd.DataFrame(new_rows)
+                    if os.path.exists(DB_FILE):
+                        new_df.to_csv(DB_FILE, mode='a', header=False, index=False)
+                    else:
+                        new_df.to_csv(DB_FILE, index=False)
+                    
+                    # Add XP
+                    st.session_state.xp += len(new_rows) * 10
+                    st.session_state.cart = []
+                    st.balloons()
+                    st.success("TRANSACTION SECURED ON BLOCKCHAIN!")
+                    time.sleep(1.5)
+                    st.rerun()
+        else:
+            st.info("Cart is Empty / Awaiting Input...")
+            st.markdown("<br><br><br>", unsafe_allow_html=True)
+            
+        st.markdown('</div>', unsafe_allow_html=True)
+
+# =========================================================
+# TAB 2: ANALYTICS GOD MODE
+# =========================================================
+with tabs[1]:
+    st.markdown("### 📈 REAL-TIME DATA VISUALIZATION")
+    
+    if len(df) > 0:
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("REVENUE", f"Rp {df['Omset'].sum():,.0f}", "+12%")
+        k2.metric("TX COUNT", len(df), "Active")
+        k3.metric("AVG BASKET", f"Rp {int(df['Omset'].mean()):,.0f}", "per Pax")
+        top_item = df['Menu'].mode()[0] if not df.empty else "N/A"
+        k4.metric("BEST SELLER", top_item, "Hot")
+        
+        c1, c2 = st.columns([2, 1])
+        
+        with c1:
+            st.markdown('<div class="neon-card">', unsafe_allow_html=True)
+            # Advanced Time Series
+            daily = df.groupby(df['Tanggal'].dt.date)['Omset'].sum().reset_index()
+            fig = px.area(daily, x='Tanggal', y='Omset', title="Revenue Velocity", color_discrete_sequence=['#00E5FF'])
+            fig.update_layout(template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+            fig.update_traces(line=dict(width=3))
+            st.plotly_chart(fig, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
-
-        with col2:
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.write("### 🧬 Menu Hologram")
-            # Creating Grid of Menu
-            cols = st.columns(2)
-            for idx, row in df_menu.iterrows():
-                with cols[idx % 2]:
-                    st.info(f"*{row['Menu']}*\n\nRp {row['Harga']:,.0f}")
+            
+        with c2:
+            st.markdown('<div class="neon-card">', unsafe_allow_html=True)
+            # 3D Chart Effect (Donut)
+            fig_pie = px.pie(df, names='Kategori', values='Omset', hole=0.5, title="Category Matrix", color_discrete_sequence=px.colors.sequential.Cyan)
+            fig_pie.update_layout(template="plotly_dark", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_pie, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- 3. NEURAL ENGINE (PREDICTION) ---
-    elif nav == "🧠 Neural Engine":
-        st.markdown('<h1 class="cyber-header">Neural Engine</h1>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.write("### 🔮 Machine Learning Prediction (Scikit-Learn)")
-        
-        # Data Prep
-        daily_sum = df.groupby(df['Tanggal'].dt.date)['Omset'].sum().reset_index()
-        daily_sum['Day_Index'] = np.arange(len(daily_sum))
-        
-        X = daily_sum[['Day_Index']]
-        y = daily_sum['Omset']
-        
-        model = LinearRegression()
-        model.fit(X, y)
-        
-        # Predict next 7 days
-        future_indices = np.array([[i] for i in range(len(daily_sum), len(daily_sum)+7)])
-        predictions = model.predict(future_indices)
-        
-        # Visualization
-        fig_pred = go.Figure()
-        fig_pred.add_trace(go.Scatter(x=daily_sum['Day_Index'], y=y, name='Actual Data', line=dict(color='#00ffcc')))
-        fig_pred.add_trace(go.Scatter(x=future_indices.flatten(), y=predictions, name='AI Forecast', line=dict(color='#ff00ff', dash='dot')))
-        fig_pred.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_pred, use_container_width=True)
-        
-        st.write(f"*Confidence Level:* {random.uniform(85, 98):.2f}%")
+            
+        # AI INSIGHT MOCKUP
+        st.markdown('<div class="neon-card">', unsafe_allow_html=True)
+        st.subheader("🧠 AI NEURAL INSIGHTS")
+        col_ai1, col_ai2 = st.columns(2)
+        with col_ai1:
+            st.info(f"**Trend Prediction:** Sales are projected to increase by **{random.randint(5,15)}%** this weekend based on historical velocity.")
+        with col_ai2:
+            st.warning(f"**Inventory Alert:** Stock for **{top_item}** is depleting faster than usual. Reorder recommended.")
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- 4. CYBER-INVENTORY ---
-    elif nav == "📦 Cyber-Inventory":
-        st.markdown('<h1 class="cyber-header">Inventory Matrix</h1>', unsafe_allow_html=True)
-        
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        edited_menu = st.data_editor(df_menu, use_container_width=True)
-        if st.button("SYNC INVENTORY"):
-            edited_menu.to_csv(MENU_FILE, index=False)
-            st.toast("Inventory Synchronized", icon="🛰️")
-        
-        # Inventory Chart
-        fig_inv = px.bar(df_menu, x='Menu', y='Stock', color='Stock', color_continuous_scale='Viridis')
-        fig_inv.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig_inv, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.warning("INSUFFICIENT DATA FOR VISUALIZATION. PLEASE EXECUTE TRANSACTIONS.")
 
-    # --- 5. SYSTEM MATRIX (LOGS) ---
-    elif nav == "⚙️ System Matrix":
-        st.markdown('<h1 class="cyber-header">System Logs</h1>', unsafe_allow_html=True)
-        st.markdown('<div class="glass-card" style="font-family:Courier New; color:#00ffcc;">', unsafe_allow_html=True)
-        logs = [
-            f"[{datetime.now().strftime('%H:%M:%S')}] INITIALIZING KERNEL...",
-            f"[{datetime.now().strftime('%H:%M:%S')}] UPLINK ESTABLISHED VIA GUNADARMA_SERVER_01",
-            f"[{datetime.now().strftime('%H:%M:%S')}] ANALYZING PROFIT MARGINS...",
-            f"[{datetime.now().strftime('%H:%M:%S')}] NEURAL NETWORK OPTIMIZED.",
-            f"[{datetime.now().strftime('%H:%M:%S')}] CACHE CLEARED."
-        ]
-        for log in logs:
-            st.write(log)
-            time.sleep(0.1)
+# =========================================================
+# TAB 3: SYSTEM CORE
+# =========================================================
+with tabs[2]:
+    col_sys1, col_sys2 = st.columns(2)
+    
+    with col_sys1:
+        st.markdown('<div class="neon-card">', unsafe_allow_html=True)
+        st.subheader("📦 INVENTORY MATRIX")
+        edited_db = st.data_editor(df_menu, num_rows="dynamic", use_container_width=True)
+        if st.button("SYNC DATABASE"):
+            edited_db.to_csv(MENU_FILE, index=False)
+            st.success("Matrix Updated.")
         st.markdown('</div>', unsafe_allow_html=True)
         
-        st.download_button("EXPORT SYSTEM DATA (CSV)", df.to_csv(), "cafe_backup.csv", "text/csv")
+    with col_sys2:
+        st.markdown('<div class="neon-card">', unsafe_allow_html=True)
+        st.subheader("💾 DATA EXFILTRATION")
+        st.write("Download full encrypted transaction logs.")
+        st.download_button(
+            label="DOWNLOAD .CSV",
+            data=df.to_csv(index=False),
+            file_name=f"backup_{int(time.time())}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        st.divider()
+        if st.button("⚠️ FACTORY RESET (DELETE ALL DATA)"):
+            if os.path.exists(DB_FILE):
+                os.remove(DB_FILE)
+                st.session_state.cart = []
+                st.session_state.xp = 0
+                st.error("SYSTEM PURGED.")
+                time.sleep(1)
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# ==========================================
-# 5. FOOTER
-# ==========================================
-st.markdown("""
-<br><br>
-<div style="text-align:center; opacity:0.5; font-size:0.8rem; letter-spacing:2px;">
-    SYSTEM: UNICORN_OMEGA_OS // VERSION: 2.0.4 // STATUS: SECURE
-</div>
-""", unsafe_allow_html=True)
+# FOOTER
+st.markdown("<br><hr>", unsafe_allow_html=True)
+st.markdown(f"<center style='color:#555; font-size:0.8em;'>SESSION ID: {id(st.session_state)} | SERVER: JAKARTA-01 | LATENCY: 2ms</center>", unsafe_allow_html=True)

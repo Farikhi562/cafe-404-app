@@ -7,3 +7,5 @@ matplotlib
 seaborn
 requests
 streamlit-lottie
+qrcode
+Pillow
