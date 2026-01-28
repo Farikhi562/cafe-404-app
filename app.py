@@ -318,6 +318,7 @@ def get_initial_menu():
         {'ID': 'C02', 'Menu': 'Neon Espresso', 'Harga': 22000, 'Kategori': 'Coffee', 'Icon': '☕', 'Stok': 100},
         {'ID': 'C03', 'Menu': 'Java Script V8', 'Harga': 30000, 'Kategori': 'Coffee', 'Icon': '☕', 'Stok': 50},
         {'ID': 'C04', 'Menu': 'Cold Brew 404', 'Harga': 32000, 'Kategori': 'Coffee', 'Icon': '🧊', 'Stok': 40},
+        {'ID': 'C05', 'Menu': 'Single Thread Espresso', 'Harga': 17000, 'Kategori': 'Coffee', 'Icon': '🧊', 'Stok': 47},
         {'ID': 'N01', 'Menu': 'Plasma Matcha', 'Harga': 32000, 'Kategori': 'Non-Coffee', 'Icon': '🍵', 'Stok': 80},
         {'ID': 'N02', 'Menu': 'Binary Berry', 'Harga': 35000, 'Kategori': 'Non-Coffee', 'Icon': '🍓', 'Stok': 60},
         {'ID': 'N03', 'Menu': 'Hologram Tea', 'Harga': 25000, 'Kategori': 'Non-Coffee', 'Icon': '🫖', 'Stok': 90},
@@ -326,6 +327,7 @@ def get_initial_menu():
         {'ID': 'F03', 'Menu': 'Firewall Steak', 'Harga': 120000, 'Kategori': 'Mainframe Meals', 'Icon': '🥩', 'Stok': 20},
         {'ID': 'S01', 'Menu': 'Data Fries', 'Harga': 25000, 'Kategori': 'GPU Snacks', 'Icon': '🍟', 'Stok': 150},
         {'ID': 'S02', 'Menu': 'Nachos Neural', 'Harga': 35000, 'Kategori': 'GPU Snacks', 'Icon': '🌮', 'Stok': 120},
+        {'ID': 'S03', 'Menu': 'Mie Goreng .NET Framework', 'Harga': 25000, 'Kategori': 'Mainframe Meals', 'Icon': '☕', 'Stok': 123},
     ]
 
 # Initialize Session State
