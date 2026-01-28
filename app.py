@@ -14,6 +14,8 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error, r2_score
 import warnings
+import base64
+from fpdf import FPDF
 
 # ==========================================
 # 1. SYSTEM KERNEL & CONFIGURATION
@@ -190,7 +192,15 @@ inject_matrix_css()
 class DataScienceCore:
     def __init__(self):
         self.scaler = StandardScaler()
-        
+    def get_upsell_recommendation(self, last_item_id):
+        # Logika rekomendasi sederhana
+        rules = {
+            'C01': 'S01 (Data Fries)', 
+            'C02': 'N04 (Red Velvet)',
+            'F01': 'C04 (Cold Brew)',
+            'N01': 'S02 (Nachos)'
+        }
+        return rules.get(last_item_id, None)
     def generate_historical_data(self, days=180):
         """Generates realistic sales data for ML training"""
         dates = [datetime.now() - timedelta(days=x) for x in range(days)]
@@ -330,14 +340,58 @@ if 'tables' not in st.session_state:
 
 if 'xp' not in st.session_state: st.session_state.xp = 5000
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-
+# --- UPDATE: STATE UNTUK AI CHAT ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = [
+        {"role": "assistant", "content": "Halo Admin! Saya S.A.R.A (System Automated Response Agent). Ada yang bisa saya bantu cek hari ini? (Coba tanya: 'omzet hari ini', 'stok menipis', atau 'status server')"}
+    ]
 # ==========================================
 # 5. HELPER FUNCTIONS
 # ==========================================
+
+# 1. FUNGSI FORMAT RUPIAH (Sendirian)
 def format_rupiah(value):
     return f"Rp {value:,.0f}".replace(",", ".")
 
+# 2. MESIN PDF (Di luar format_rupiah, sejajar di kiri)
+class PDFReport(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 15)
+        self.cell(0, 10, 'FARIKHI OS - FINANCIAL REPORT', 0, 1, 'C')
+        self.ln(10)
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+# 3. FUNGSI GENERATE LINK (Di luar juga)
+def generate_pdf_download_link(df_tx):
+    pdf = PDFReport()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    total = df_tx['Total'].sum()
+    pdf.cell(200, 10, txt=f"Total Revenue: {format_rupiah(total)}", ln=1)
+    pdf.cell(200, 10, txt=f"Total Transactions: {len(df_tx)}", ln=1)
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(40, 10, "Date", 1); pdf.cell(60, 10, "Item", 1); pdf.cell(40, 10, "Total", 1); pdf.ln()
+    
+    pdf.set_font("Arial", size=10)
+    # Ambil 20 transaksi terakhir
+    for i, row in df_tx.tail(20).iterrows():
+        # Pastikan format tanggal string
+        tgl = row['Date'].strftime("%Y-%m-%d") if hasattr(row['Date'], 'strftime') else str(row['Date'])
+        pdf.cell(40, 10, tgl, 1)
+        pdf.cell(60, 10, str(row['ItemName']), 1)
+        pdf.cell(40, 10, str(int(row['Total'])), 1)
+        pdf.ln()
+        
+    return pdf.output(dest='S').encode('latin-1')
+
 def add_to_kitchen(cart_items, table_no="POS"):
+    # ... (lanjutan kode kitchen kamu di bawah sini) ...
     order_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     order = {
         'id': order_id,
@@ -380,24 +434,52 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ==========================================
-# 7. MAIN INTERFACE
+# 7. MAIN INTERFACE (SIDEBAR & HEADER)
 # ==========================================
 
-# --- SIDEBAR DASHBOARD ---
+# --- SIDEBAR DASHBOARD (VERSI ULTIMATE) ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/9187/9187604.png", width=80)
     st.markdown("## OPERATOR: ADMIN")
-    st.caption("ACCESS LEVEL: GOD MODE")
+    st.caption(f"ACCESS LEVEL: GOD MODE | {CURRENT_DATE.strftime('%d-%m-%Y')}")
+    st.markdown("---")
     
+    # [FITUR BARU 1] SURGE PRICING TOGGLE
+    st.markdown("### ⚡ DYNAMIC PRICING")
+    surge_active = st.toggle("Aktifkan Surge Pricing (+20%)", value=False)
+    
+    # Logic Harga Naik
+    price_multiplier = 1.0
+    if surge_active:
+        price_multiplier = 1.2 # Harga dikali 1.2 (Naik 20%)
+        st.warning("⚠️ HARGA NAIK 20% (BUSY HOUR)")
+    
+    # [FITUR LAMA] KPI METRICS
     st.markdown("### 📊 LIVE METRICS")
-    total_revenue = st.session_state.transactions['Total'].sum()
-    today_revenue = st.session_state.transactions[
-        st.session_state.transactions['Date'].dt.date == datetime.now().date()
+    df_tx = st.session_state.transactions
+    total_revenue = df_tx['Total'].sum()
+    
+    # Hitung omzet hari ini
+    today_revenue = df_tx[
+        df_tx['Date'].dt.date == CURRENT_DATE.date()
     ]['Total'].sum()
     
     st.metric("TOTAL REVENUE (YTD)", f"{total_revenue/1000000:.1f}M")
     st.metric("TODAY'S REVENUE", format_rupiah(today_revenue))
     
+    # [FITUR BARU 2] DOWNLOAD PDF
+    st.markdown("### 📄 LAPORAN")
+    if st.button("🖨️ Download Laporan PDF"):
+        try:
+            # Panggil fungsi dari utils.py (Pastikan utils.py sudah diupdate)
+            pdf_bytes = generate_pdf_download_link(st.session_state.transactions)
+            b64 = base64.b64encode(pdf_bytes).decode()
+            href = f'<a href="data:application/octet-stream;base64,{b64}" download="Laporan_Farikhi_OS.pdf" style="background:#00E5FF; color:black; padding:5px 10px; border-radius:5px; text-decoration:none; font-weight:bold; display:block; text-align:center;">📥 KLIK UNTUK DOWNLOAD</a>'
+            st.markdown(href, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Gagal generate PDF: {e}")
+
+    # SYSTEM STATUS
     st.markdown("### 🛠️ SYSTEM STATUS")
     cols = st.columns(2)
     cols[0].markdown("**CPU**")
@@ -405,27 +487,105 @@ with st.sidebar:
     cols[1].markdown("**RAM**")
     cols[1].progress(random.randint(60, 90))
     
+    st.markdown("---")
     if st.button("🛑 EMERGENCY SHUTDOWN"):
         st.session_state.logged_in = False
         st.rerun()
 
-# --- HEADER MARQUEE ---
-st.markdown("""
-<div style="background:black; border-bottom:1px solid #00E5FF; color:#00E5FF; font-family:'Share Tech Mono'; padding:5px; white-space:nowrap; overflow:hidden;">
-    <marquee>SYSTEM OPTIMAL /// ML MODELS RETRAINED /// KITCHEN QUEUE: LOW /// STOCK ALERTS: NONE /// WELCOME TO FARIKHI OS TITAN BUILD</marquee>
+# --- HEADER MARQUEE (DENGAN STATUS SURGE) ---
+# Warna teks berubah jadi PINK jika Surge Pricing aktif
+header_color = "#FF00CC" if surge_active else "#00E5FF"
+status_text = "⚡ SYSTEM ALERT: SURGE PRICING ACTIVE (+20%)" if surge_active else "🟢 SYSTEM OPTIMAL /// ML MODELS RETRAINED"
+
+st.markdown(f"""
+<div style="background:black; border-bottom:1px solid {header_color}; color:{header_color}; font-family:'Share Tech Mono'; padding:5px; white-space:nowrap; overflow:hidden;">
+    <marquee>{status_text} /// WELCOME TO FARIKHI OS TITAN BUILD</marquee>
 </div>
 """, unsafe_allow_html=True)
 
 # --- NAVIGATION ---
+# Pastikan Tab-nya lengkap (7 Tab)
 tabs = st.tabs([
     "🛒 POS TERMINAL", 
     "🍳 KITCHEN DISPLAY", 
     "🪑 TABLE MAP", 
     "🤖 DATA SCIENCE HQ", 
     "📦 INVENTORY", 
-    "👥 CRM"
+    "💬 LIVE CHAT",   # <-- Pastikan ada ini
+    "🌐 PUBLIC WEB"   # <-- Pastikan ada ini
 ])
-
+# ==========================================
+# TAB 6: CHATBOT S.A.R.A (SMART VERSION)
+# ==========================================
+with tabs[5]:
+    st.markdown("### 💬 S.A.R.A INTELLIGENCE")
+    
+    col_chat, col_info = st.columns([3, 1])
+    
+    with col_info:
+        st.info("S.A.R.A terhubung ke Database secara Real-Time. Coba tanya: 'omzet hari ini', 'stok', atau 'status surge'.")
+    
+    with col_chat:
+        # Tampilkan History
+        for msg in st.session_state.chat_history:
+            st.chat_message(msg["role"]).write(msg["content"])
+        
+        # Input Chat
+        if p := st.chat_input("Perintah AI..."):
+            # Simpan input user
+            st.session_state.chat_history.append({"role":"user", "content":p})
+            st.chat_message("user").write(p)
+            
+            # --- OTAK AI S.A.R.A ---
+            resp = "Maaf, saya tidak mengerti. Coba tanya soal Omzet, Stok, atau Surge Pricing."
+            p_low = p.lower()
+            
+            # 1. Cek Omzet Real-time
+            if "omzet" in p_low or "pendapatan" in p_low: 
+                # Hitung ulang omzet detik ini
+                rev = st.session_state.transactions['Total'].sum()
+                today_rev = st.session_state.transactions[
+                    st.session_state.transactions['Date'].dt.date == CURRENT_DATE.date()
+                ]['Total'].sum()
+                resp = f"📊 **Laporan Keuangan:**\n\n- Omzet Hari Ini: **{format_rupiah(today_rev)}**\n- Total Omzet (YTD): **{format_rupiah(rev)}**\n\nTren terlihat positif, Boss."
+            
+            # 2. Cek Status Surge Pricing (Fitur Baru)
+            elif "surge" in p_low or "harga" in p_low:
+                status = "AKTIF (Harga Naik 20%)" if surge_active else "NON-AKTIF (Harga Normal)"
+                resp = f"⚡ **Status Dynamic Pricing:**\n\nSaat ini Surge Pricing sedang **{status}**."
+            
+            # 3. Cek Stok Menipis
+            elif "stok" in p_low:
+                low = st.session_state.menu_db[st.session_state.menu_db['Stok'] < 20]
+                if low.empty: 
+                    resp = "📦 **Status Gudang:** Aman! Semua stok di atas batas aman (20 item)."
+                else: 
+                    list_item = ", ".join(low['Menu'].tolist())
+                    resp = f"⚠️ **PERINGATAN STOK:**\n\nItem berikut menipis: **{list_item}**. Segera restock!"
+            
+            # 4. Sapaan
+            elif "halo" in p_low or "hi" in p_low:
+                resp = "Halo Admin! S.A.R.A siap membantu operasional FARIKHI CAFE 2077."
+            
+            # Simpan & Tampilkan Jawaban AI
+            st.session_state.chat_history.append({"role":"assistant", "content":resp})
+            st.chat_message("assistant").write(resp)
+# ==========================================
+# TAB 7: PUBLIC WEBSITE (NEW)
+# ==========================================
+with tabs[6]:
+    st.markdown("""
+    <div style="background:url('https://images.unsplash.com/photo-1554118811-1e0d58224f24'); padding:80px; text-align:center; border-radius:15px; border:1px solid cyan;">
+        <h1 style="font-family:'Orbitron'; font-size:3em; color:white; text-shadow:0 0 10px cyan;">FARIKHI CAFE 2077</h1>
+        <p style="color:white; font-size:1.5em;">Taste the Future</p>
+    </div>
+    <br>
+    """, unsafe_allow_html=True)
+    
+    # Showcase Menu
+    cols = st.columns(4)
+    for i, r in st.session_state.menu_db.head(4).iterrows():
+        cols[i].markdown(f"<div style='background:#111; padding:10px; border-radius:10px; text-align:center;'><h2>{r['Icon']}</h2><b>{r['Menu']}</b><br>{format_rupiah(r['Harga'])}</div>", unsafe_allow_html=True)
 # ==========================================
 # MODULE 1: POS TERMINAL
 # ==========================================
@@ -707,7 +867,7 @@ with tabs[5]:
     }))
 
 # ==========================================
-# FOOTER
+# FOOTERs
 # ==========================================
 st.markdown("---")
 st.markdown("<div style='text-align:center; color:#555;'>FARIKHI OS TITAN BUILD v9.9.9 | MACHINE LEARNING ACTIVE | MEMORY USAGE: 402MB</div>", unsafe_allow_html=True)
