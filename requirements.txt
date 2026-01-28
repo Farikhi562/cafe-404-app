@@ -2,12 +2,5 @@ streamlit
 pandas
 numpy
 plotly
-scikit-learn
-requests
-streamlit-lottie
-qrcode
-Pillow
-streamlit-extras
-streamlit-option-menu
 watchdog
 openpyxl
