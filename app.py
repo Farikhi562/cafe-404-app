@@ -20,6 +20,12 @@ from fpdf import FPDF
 # ==========================================
 # 1. SYSTEM KERNEL & CONFIGURATION
 # ==========================================
+
+
+# ==========================================
+# 1. KONFIGURASI (TAMBAHKAN INI)
+# ==========================================
+CURRENT_DATE = datetime(2026, 1, 28)  #
 warnings.filterwarnings('ignore')
 st.set_page_config(
     page_title="FARIKHI OS: TITAN BUILD",
