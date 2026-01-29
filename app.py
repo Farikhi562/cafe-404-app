@@ -102,7 +102,7 @@ class DatabaseManager:
             st.error(f"Error Load Menu: {e}")
             # Perbaikan: Pastikan kurungnya cuma satu di ujung
             return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
-            
+
     def load_transactions(self):
         try:
             # Ambil data mentah
@@ -643,57 +643,63 @@ if not st.session_state.get('logged_in'):
 # 7. MAIN INTERFACE (SIDEBAR & HEADER)
 # ==========================================
 
-# --- SIDEBAR DASHBOARD (VERSI ULTIMATE) ---
+# --- SIDEBAR DASHBOARD ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/9187/9187604.png", width=80)
     st.markdown("## OPERATOR: ADMIN")
-    st.caption(f"ACCESS LEVEL: GOD MODE | {CURRENT_DATE.strftime('%d-%m-%Y')}")
+    st.caption(f"ACCESS LEVEL: GOD MODE | {datetime.now().strftime('%d-%m-%Y')}")
     st.markdown("---")
     
-    # [FITUR BARU 1] SURGE PRICING TOGGLE
+    # [FITUR BARU] SURGE PRICING
     st.markdown("### ⚡ DYNAMIC PRICING")
     surge_active = st.toggle("Aktifkan Surge Pricing (+20%)", value=False)
     
-    # Logic Harga Naik
     price_multiplier = 1.0
     if surge_active:
-        price_multiplier = 1.2 # Harga dikali 1.2 (Naik 20%)
-        st.warning("⚠️ HARGA NAIK 20% (BUSY HOUR)")
+        price_multiplier = 1.2
+        st.warning("⚠️ HARGA NAIK 20%")
     
     # [FITUR LAMA] KPI METRICS
     st.markdown("### 📊 LIVE METRICS")
-    df_tx = st.session_state.transactions
-    # ==========================================
-# FIX: LOGIKA DASHBOARD AMAN (Paste ini menggantikan perhitungan lama)
-# ==========================================
-
-# 1. Pastikan dulu format Tanggal benar-benar Datetime
-# (Penting! Kalau data kosong, Pandas suka lupa kalau ini kolom tanggal)
-if not df_tx.empty and 'Date' in df_tx.columns:
-    df_tx['Date'] = pd.to_datetime(df_tx['Date'], errors='coerce')
-
-# 2. Hitung Total Omzet (Dengan Pengecekan)
-if not df_tx.empty and 'Total' in df_tx.columns:
-    total_rev = df_tx['Total'].sum()
-else:
-    total_rev = 0
-
-# 3. Hitung Omzet Hari Ini (Dengan Pengecekan Ekstra)
-today_rev = 0
-if not df_tx.empty and 'Date' in df_tx.columns:
-    try:
-        # Cek apakah kolom Date sudah sukses jadi datetime (bukan NaT/Error)
-        valid_dates = df_tx.dropna(subset=['Date'])
-        # Filter hari ini
-        today_data = valid_dates[valid_dates['Date'].dt.date == CURRENT_DATE.date()]
-        today_rev = today_data['Total'].sum()
-    except Exception as e:
-        # Kalau masih error, anggap 0 dulu biar app gak mati
-        today_rev = 0
     
-    st.metric("TOTAL REVENUE (YTD)", f"{total_revenue/1000000:.1f}M")
-    st.metric("TODAY'S REVENUE", format_rupiah(today_revenue))
+    # 1. Load Data Transaksi Terbaru
+    # Kita panggil dari database manager biar datanya fresh dari Google Sheet
+    df_tx = db_manager.load_transactions()
     
+    # 2. Inisialisasi Variabel (Nilai Awal 0)
+    total_revenue = 0
+    today_revenue = 0
+
+    # 3. Logika Perhitungan (Anti-Crash)
+    if not df_tx.empty:
+        # Pastikan kolom Date berformat tanggal
+        if 'Date' in df_tx.columns:
+            df_tx['Date'] = pd.to_datetime(df_tx['Date'], errors='coerce')
+        
+        # Hitung Total Revenue
+        if 'Total' in df_tx.columns:
+            total_revenue = df_tx['Total'].sum()
+            
+        # Hitung Revenue Hari Ini
+        if 'Date' in df_tx.columns and 'Total' in df_tx.columns:
+            try:
+                # Ambil tanggal hari ini
+                now = datetime.now().date()
+                # Filter data yang tanggalnya == hari ini
+                today_data = df_tx[df_tx['Date'].dt.date == now]
+                today_revenue = today_data['Total'].sum()
+            except:
+                today_revenue = 0
+
+    # 4. Tampilkan Metric (Sekarang namanya sudah SAMA: total_revenue)
+    # Kita pakai format f-string biar tidak perlu fungsi format_rupiah eksternal
+    st.metric("TOTAL OMZET", f"Rp {total_revenue:,.0f}")
+    st.metric("OMZET HARI INI", f"Rp {today_revenue:,.0f}")
+    
+    # Tombol Refresh Manual (Berguna kalau habis update di Excel)
+    if st.button("🔄 Refresh Data"):
+        st.rerun()
+        
     # [FITUR BARU 2] DOWNLOAD PDF
     st.markdown("### 📄 LAPORAN")
     if st.button("🖨️ Download Laporan PDF"):
