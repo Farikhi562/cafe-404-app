@@ -6,4 +6,3 @@ watchdog
 openpyxl
 scikit-learn
 fpdf
-sqllite3
