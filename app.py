@@ -16,7 +16,129 @@ from sklearn.metrics import mean_absolute_error, r2_score
 import warnings
 import base64
 from fpdf import FPDF
+import sqlite3
 
+# ==========================================
+# 0. DATABASE ENGINE (SQLITE3 WRAPPER)
+# ==========================================
+class DatabaseManager:
+    def __init__(self, db_name="farikhi_titan.db"):
+        self.db_name = db_name
+        self.init_db()
+
+    def get_connection(self):
+        return sqlite3.connect(self.db_name)
+
+    def init_db(self):
+        """Membuat tabel jika belum ada"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        
+        # Tabel Menu
+        c.execute('''CREATE TABLE IF NOT EXISTS menu (
+                        id TEXT PRIMARY KEY,
+                        menu_name TEXT,
+                        price REAL,
+                        category TEXT,
+                        icon TEXT,
+                        stock INTEGER
+                    )''')
+        
+        # Tabel Transaksi
+        c.execute('''CREATE TABLE IF NOT EXISTS transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        date TIMESTAMP,
+                        item_id TEXT,
+                        item_name TEXT,
+                        category TEXT,
+                        price REAL,
+                        qty INTEGER,
+                        total REAL,
+                        hour INTEGER,
+                        customer_type TEXT,
+                        payment_method TEXT
+                    )''')
+        conn.commit()
+        conn.close()
+
+    def load_menu(self):
+        """Load menu dari DB ke Pandas DataFrame"""
+        conn = self.get_connection()
+        df = pd.read_sql("SELECT * FROM menu", conn)
+        conn.close()
+        
+        # Rename kolom agar sesuai dengan kode lama kamu
+        df = df.rename(columns={
+            'id': 'ID', 'menu_name': 'Menu', 'price': 'Harga', 
+            'category': 'Kategori', 'icon': 'Icon', 'stock': 'Stok'
+        })
+        return df
+
+    def save_transaction(self, tx_data):
+        """Menyimpan transaksi baru"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute('''INSERT INTO transactions 
+                    (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                (tx_data['Date'], tx_data['ItemID'], tx_data['ItemName'], tx_data['Category'], 
+                tx_data['Price'], tx_data['Qty'], tx_data['Total'], tx_data['Hour'], 
+                tx_data['CustomerType'], tx_data['Payment']))
+        conn.commit()
+        conn.close()
+
+    def update_stock(self, item_id, new_stock):
+        """Update stok item"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE menu SET stock = ? WHERE id = ?", (new_stock, item_id))
+        conn.commit()
+        conn.close()
+
+    def load_transactions(self):
+        """Load history transaksi ke Pandas"""
+        conn = self.get_connection()
+        df = pd.read_sql("SELECT * FROM transactions", conn)
+        conn.close()
+        
+        if not df.empty:
+            df['Date'] = pd.to_datetime(df['date']) # Convert string ke datetime untuk ML
+            # Rename kolom agar sesuai dengan kode lama
+            df = df.rename(columns={
+                'item_id': 'ItemID', 'item_name': 'ItemName', 'category': 'Category',
+                'price': 'Price', 'qty': 'Qty', 'total': 'Total', 'hour': 'Hour',
+                'customer_type': 'CustomerType', 'payment_method': 'Payment'
+            })
+        return df
+
+    def seed_initial_data(self, initial_menu, initial_tx_df):
+        """Isi data awal jika database kosong (biar nggak error pas pertama run)"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        
+        # Cek apakah menu kosong
+        c.execute("SELECT count(*) FROM menu")
+        if c.fetchone()[0] == 0:
+            for item in initial_menu:
+                c.execute("INSERT INTO menu VALUES (?, ?, ?, ?, ?, ?)", 
+                    (item['ID'], item['Menu'], item['Harga'], item['Kategori'], item['Icon'], item['Stok']))
+        
+        # Cek apakah transaksi kosong (jika kosong, isi dari generator sintetik kamu)
+        c.execute("SELECT count(*) FROM transactions")
+        if c.fetchone()[0] == 0:
+            for _, row in initial_tx_df.iterrows():
+                c.execute('''INSERT INTO transactions 
+                    (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                (row['Date'], row['ItemID'], row['ItemName'], row['Category'], 
+                row['Price'], row['Qty'], row['Total'], row['Hour'], 
+                row['CustomerType'], row['Payment']))
+        
+        conn.commit()
+        conn.close()
+
+# Inisialisasi DB Manager
+db_manager = DatabaseManager()
 # ==========================================
 # 1. SYSTEM KERNEL & CONFIGURATION
 # ==========================================
@@ -330,28 +452,64 @@ def get_initial_menu():
         {'ID': 'S03', 'Menu': 'Mie Goreng .NET Framework', 'Harga': 25000, 'Kategori': 'Mainframe Meals', 'Icon': '☕', 'Stok': 123},
     ]
 
-# Initialize Session State
+# ==========================================
+# 4. DATA GENERATION & SESSION MANAGEMENT (UPDATED FOR SQLITE)
+# ==========================================
+
+# Inisialisasi Database Manager
+db_manager = DatabaseManager()
+
+# A. DATABASE SEEDING (Hanya jalan sekali saat aplikasi pertama kali mendeteksi session baru)
+if 'db_initialized' not in st.session_state:
+    with st.spinner("CONNECTING TO TITAN DATABASE & SYNCHRONIZING HISTORY..."):
+        # 1. Siapkan data awal (jika DB benar-benar kosong)
+        ds_core = DataScienceCore()
+        initial_menu_data = get_initial_menu()
+        
+        # Generate dummy history HANYA jika kita perlu seeding (akan dicek di dalam method seed_initial_data)
+        # Tapi kita generate dulu di sini untuk dikirim sebagai parameter
+        dummy_tx_data = ds_core.generate_historical_data(days=120)
+        
+        # 2. Kirim ke DB Manager untuk dicek dan disimpan (hanya save jika tabel kosong)
+        db_manager.seed_initial_data(initial_menu_data, dummy_tx_data)
+        
+        st.session_state.db_initialized = True
+
+# B. LOAD DATA KE RAM (SESSION STATE)
+# Kita load dari SQLite ke Session State agar akses data super cepat (tidak query SQL terus-menerus)
+
 if 'menu_db' not in st.session_state:
-    st.session_state.menu_db = pd.DataFrame(get_initial_menu())
+    st.session_state.menu_db = db_manager.load_menu()
 
 if 'transactions' not in st.session_state:
-    ds_core = DataScienceCore()
-    with st.spinner("INITIALIZING NEURAL NETWORKS & GENERATING SYNTHETIC HISTORY..."):
-        st.session_state.transactions = ds_core.generate_historical_data(days=120)
-        st.session_state.ds_core = ds_core # Persist DS Core
+    # Load history transaksi dari file .db
+    st.session_state.transactions = db_manager.load_transactions()
+    
+    # Inisialisasi ulang DS Core untuk dipakai fitur prediksi nanti
+    if 'ds_core' not in st.session_state:
+        st.session_state.ds_core = DataScienceCore()
 
-if 'cart' not in st.session_state: st.session_state.cart = []
-if 'kitchen_queue' not in st.session_state: st.session_state.kitchen_queue = []
+# C. STATE LAINNYA (Non-Persistent / Sementara)
+if 'cart' not in st.session_state: 
+    st.session_state.cart = []
+
+if 'kitchen_queue' not in st.session_state: 
+    st.session_state.kitchen_queue = []
+
 if 'tables' not in st.session_state: 
-    # Create 12 Tables
+    # Create 12 Tables (Status reset ke Empty setiap restart server, bisa diubah ke DB jika mau permanen)
     st.session_state.tables = [{'id': i, 'status': 'Empty', 'order': None} for i in range(1, 13)]
 
-if 'xp' not in st.session_state: st.session_state.xp = 5000
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-# --- UPDATE: STATE UNTUK AI CHAT ---
+if 'xp' not in st.session_state: 
+    st.session_state.xp = 5000
+
+if 'logged_in' not in st.session_state: 
+    st.session_state.logged_in = False
+
+# --- STATE UNTUK AI CHAT ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
-        {"role": "assistant", "content": "Halo Admin! Saya S.A.R.A (System Automated Response Agent). Ada yang bisa saya bantu cek hari ini? (Coba tanya: 'omzet hari ini', 'stok menipis', atau 'status server')"}
+        {"role": "assistant", "content": "Halo Admin! Database SQLite Terhubung. Saya S.A.R.A (System Automated Response Agent). Ada yang bisa saya bantu cek? (Coba tanya: 'omzet hari ini', 'stok menipis', atau 'status server')"}
     ]
 # ==========================================
 # 5. HELPER FUNCTIONS
@@ -663,10 +821,37 @@ with tabs[0]:
             table_select = st.selectbox("TABLE NO", ["TAKEAWAY"] + [f"T{t['id']}" for t in st.session_state.tables])
             
             if st.button("CONFIRM PAYMENT", type="primary", use_container_width=True):
-                # 1. Update Inventory
+                # 1. Update Inventory & Save Transaction to DB
                 for _, item in cart_grouped.iterrows():
+                    # Update di Session State (Visual)
                     idx = st.session_state.menu_db.index[st.session_state.menu_db['ID'] == item['ID']].tolist()[0]
-                    st.session_state.menu_db.at[idx, 'Stok'] -= item['Qty']
+                    current_stock = st.session_state.menu_db.at[idx, 'Stok'] - item['Qty']
+                    st.session_state.menu_db.at[idx, 'Stok'] = current_stock
+                    
+                    # Update di SQLite (Persistent)
+                    db_manager.update_stock(item['ID'], int(current_stock))
+                    
+                    # Prepare Data Transaksi
+                    new_tx = {
+                        'Date': datetime.now(),
+                        'ItemID': item['ID'],
+                        'ItemName': item['Menu'],
+                        'Category': 'Unknown', 
+                        'Price': item['Harga'],
+                        'Qty': item['Qty'],
+                        'Total': item['Harga'] * item['Qty'],
+                        'Hour': datetime.now().hour,
+                        'CustomerType': 'Walk-in',
+                        'Payment': pay_method
+                    }
+                    
+                    # Simpan ke SQLite
+                    db_manager.save_transaction(new_tx)
+                    
+                    # Tambahkan ke Session State (agar grafik langsung update tanpa reload DB)
+                    st.session_state.transactions = pd.concat([st.session_state.transactions, pd.DataFrame([new_tx])], ignore_index=True)
+
+                # ... (Logika kirim ke Kitchen & Table Status biarkan sama) ...
                     
                     # 2. Add to Transactions
                     new_tx = {
@@ -860,9 +1045,23 @@ with tabs[3]:
 with tabs[4]:
     st.markdown("## 📦 WAREHOUSE CONTROL")
     edited_df = st.data_editor(st.session_state.menu_db, use_container_width=True, num_rows="dynamic")
+    
     if st.button("SAVE CHANGES"):
+        # Update Session State
         st.session_state.menu_db = edited_df
-        st.success("DB UPDATED")
+        
+        # Update SQLite (Looping update agar aman)
+        conn = db_manager.get_connection()
+        c = conn.cursor()
+        # Hapus data lama dan insert baru (cara paling simpel untuk data editor)
+        c.execute("DELETE FROM menu") 
+        for index, row in edited_df.iterrows():
+            c.execute("INSERT INTO menu VALUES (?, ?, ?, ?, ?, ?)", 
+                    (row['ID'], row['Menu'], row['Harga'], row['Kategori'], row['Icon'], row['Stok']))
+        conn.commit()
+        conn.close()
+        
+        st.success("DATABASE PERMANEN TELAH DI-UPDATE")
 
 with tabs[5]:
     st.markdown("## 👥 CUSTOMER RELATIONSHIP")
