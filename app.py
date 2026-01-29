@@ -20,9 +20,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import google.generativeai as genai
 
-# ==========================================
-# 0. DATABASE ENGINE (GOOGLE SHEETS - FINAL STABLE VERSION)
-# ==========================================
 class DatabaseManager:
     def __init__(self):
         try:
@@ -30,139 +27,100 @@ class DatabaseManager:
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
             
             # 2. Ambil Credentials dari Secrets
-            creds_dict = dict(st.secrets["gcp_service_account"])
+            # Kita copy dulu biar gak merusak data asli
+            creds_dict = dict(st.secrets["gcp_service_account"]).copy()
             
-            # --- BAGIAN PERBAIKAN ERROR 500 ---
-            # Kita paksa ubah karakter '\n' menjadi Enter beneran
-            if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-            # ----------------------------------
+            # --- SUPER CLEANER: MEMBERSIHKAN PRIVATE KEY ---
+            raw_key = creds_dict["private_key"]
+            
+            # Kasus A: Jika key punya tulisan literal "\n" (biasa terjadi saat copy-paste JSON)
+            if "\\n" in raw_key:
+                raw_key = raw_key.replace("\\n", "\n")
+            
+            # Kasus B: Jika key diawali dan diakhiri tanda kutip ganda yg tidak sengaja ikut
+            if raw_key.startswith('"') and raw_key.endswith('"'):
+                raw_key = raw_key[1:-1]
 
+            # Masukkan kunci yang sudah bersih
+            creds_dict["private_key"] = raw_key
+            # -----------------------------------------------
+
+            # 3. Login
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             self.client = gspread.authorize(creds)
             
-            # 3. Buka Spreadsheet
-            # Pastikan nama file di Google Sheet SAMA PERSIS (huruf besar/kecil spasi pengaruh)
+            # 4. Buka Spreadsheet
             self.sheet = self.client.open("Farikhi Titan DB")
             self.ws_menu = self.sheet.worksheet("menu")
             self.ws_tx = self.sheet.worksheet("transactions")
 
         except Exception as e:
             st.error(f"⚠️ Gagal Konek Google Sheets: {e}")
-            st.warning("Tips: Cek apakah email bot sudah dijadikan EDITOR di file Google Sheet?")
+            st.info("Coba cek format 'private_key' di Secrets. Pastikan tidak ada spasi aneh di awal/akhir.")
             st.stop()
 
-    # --- FUNGSI BACA MENU (ANTI KEYERROR) ---
-    # --- FUNGSI BACA MENU (VERSION 3.0: ANTI HEADER DUPLIKAT) ---
-    # --- FUNGSI BACA MENU (FIXED VERSION) ---
+    # --- FUNGSI BACA MENU (ANTI ERROR) ---
     def load_menu(self):
         try:
-            # Kita pakai get_all_values (ambil mentahnya aja)
             all_rows = self.ws_menu.get_all_values()
-            
-            # Cek data kosong
             if not all_rows or len(all_rows) < 2:
-                # Perbaikan: Hapus satu tanda kurung ')' di ujung baris bawah ini
                 return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
-
-            # Baris 0 adalah Header, Baris 1 dst adalah Data
+            
             headers = [h.strip().lower() for h in all_rows[0]] 
             data = all_rows[1:]
-
             df = pd.DataFrame(data, columns=headers)
+            df = df.loc[:, df.columns != ''] # Hapus kolom kosong
 
-            # Buang kolom yang headernya kosong
-            df = df.loc[:, df.columns != '']
-
-            # Rename ke format Aplikasi
-            rename_map = {
-                'id': 'ID',
-                'menu_name': 'Menu',
-                'menu name': 'Menu',
-                'price': 'Harga',
-                'category': 'Kategori',
-                'icon': 'Icon',
-                'stock': 'Stok'
-            }
+            rename_map = {'id':'ID', 'menu_name':'Menu', 'menu name':'Menu', 'price':'Harga', 'category':'Kategori', 'icon':'Icon', 'stock':'Stok'}
             df = df.rename(columns=rename_map)
 
-            # Default value
             if 'Kategori' not in df.columns: df['Kategori'] = 'Uncategorized'
             if 'Menu' not in df.columns: df['Menu'] = 'Unknown Item'
 
-            # Konversi Angka
             for col in ['Harga', 'Stok']:
                 if col in df.columns:
                     df[col] = df[col].astype(str).str.replace(r'[^\d]', '', regex=True)
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
             return df
-            
-        except Exception as e:
-            st.error(f"Error Load Menu: {e}")
-            # Perbaikan: Pastikan kurungnya cuma satu di ujung
-            return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
+        except: return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
 
+    # --- FUNGSI BACA TRANSAKSI ---
     def load_transactions(self):
         try:
-            # Ambil data mentah
             data = self.ws_tx.get_all_records()
+            wajib = ['Date', 'ItemID', 'ItemName', 'Category', 'Price', 'Qty', 'Total', 'Hour', 'CustomerType', 'Payment']
+            if not data: return pd.DataFrame(columns=wajib)
             
-            # Definisikan Kolom Wajib (Agar tidak error saat data kosong)
-            wajib_ada = ['Date', 'ItemID', 'ItemName', 'Category', 'Price', 
-                        'Qty', 'Total', 'Hour', 'CustomerType', 'Payment']
-            
-            if not data:
-                return pd.DataFrame(columns=wajib_ada)
-
             df = pd.DataFrame(data)
+            df = df.rename(columns={'date':'Date', 'item_id':'ItemID', 'item_name':'ItemName', 'category':'Category', 'price':'Price', 'qty':'Qty', 'total':'Total', 'hour':'Hour', 'customer_type':'CustomerType', 'payment_method':'Payment'})
             
-            # Rename (Sesuaikan dengan header huruf kecil di Excel kamu)
-            df = df.rename(columns={
-                'date': 'Date', 'item_id': 'ItemID', 'item_name': 'ItemName', 
-                'category': 'Category', 'price': 'Price', 'qty': 'Qty', 
-                'total': 'Total', 'hour': 'Hour', 'customer_type': 'CustomerType', 
-                'payment_method': 'Payment'
-            })
-            
-            # Cek ulang apakah kolom Total berhasil dibuat
-            if 'Total' not in df.columns:
-                 return pd.DataFrame(columns=wajib_ada)
-
-            df['Date'] = pd.to_datetime(df['Date'])
+            if 'Date' in df.columns: df['Date'] = pd.to_datetime(df['Date'])
+            if 'Total' not in df.columns: return pd.DataFrame(columns=wajib)
             return df
-            
-        except Exception as e:
-            # Return tabel kosong jika error parah, biar aplikasi tetap jalan
-            return pd.DataFrame(columns=['Date', 'ItemID', 'ItemName', 'Category', 'Price', 'Qty', 'Total', 'Hour', 'CustomerType', 'Payment'])
+        except: return pd.DataFrame(columns=['Date', 'ItemID', 'ItemName', 'Category', 'Price', 'Qty', 'Total', 'Hour', 'CustomerType', 'Payment'])
 
-    # --- FUNGSI TULIS DATA (WRITE) ---
+    # --- FUNGSI SAVE ---
     def save_transaction(self, tx_data):
         try:
-            row = [
-                str(tx_data['Date']), tx_data['ItemID'], tx_data['ItemName'], 
-                tx_data['Category'], tx_data['Price'], tx_data['Qty'], 
-                tx_data['Total'], tx_data['Hour'], tx_data['CustomerType'], 
-                tx_data['Payment']
-            ]
+            row = [str(tx_data['Date']), tx_data['ItemID'], tx_data['ItemName'], tx_data['Category'], tx_data['Price'], tx_data['Qty'], tx_data['Total'], tx_data['Hour'], tx_data['CustomerType'], tx_data['Payment']]
             self.ws_tx.append_row(row)
-        except Exception as e:
-            st.error(f"Gagal simpan transaksi: {e}")
+        except: pass
 
+    # --- FUNGSI UPDATE STOK ---
     def update_stock(self, item_id, new_stock):
         try:
             cell = self.ws_menu.find(item_id)
-            self.ws_menu.update_cell(cell.row, 6, new_stock) 
+            self.ws_menu.update_cell(cell.row, 6, new_stock)
         except: pass
 
-    # --- FUNGSI DUMMY (BIAR TIDAK ERROR DI FITUR DAPUR) ---
+    # --- FUNGSI DUMMY (BIAR GAK CRASH) ---
     def get_kitchen_queue(self): return []
     def add_kitchen_order(self, order): pass
     def update_kitchen_status(self, oid, stat): pass
     def get_tables(self): return [{'id': i, 'status': 'Empty'} for i in range(1, 13)]
     def update_table_status(self, tid, stat): pass
 
-# Inisialisasi
+# Inisialisasi Database
 db_manager = DatabaseManager()
 
 # ==========================================
@@ -699,7 +657,7 @@ with st.sidebar:
     # Tombol Refresh Manual (Berguna kalau habis update di Excel)
     if st.button("🔄 Refresh Data"):
         st.rerun()
-        
+
     # [FITUR BARU 2] DOWNLOAD PDF
     st.markdown("### 📄 LAPORAN")
     if st.button("🖨️ Download Laporan PDF"):
