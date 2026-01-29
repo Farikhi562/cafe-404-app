@@ -626,12 +626,33 @@ with st.sidebar:
     # [FITUR LAMA] KPI METRICS
     st.markdown("### 📊 LIVE METRICS")
     df_tx = st.session_state.transactions
-    total_revenue = df_tx['Total'].sum()
-    
-    # Hitung omzet hari ini
-    today_revenue = df_tx[
-        df_tx['Date'].dt.date == CURRENT_DATE.date()
-    ]['Total'].sum()
+    # ==========================================
+# FIX: LOGIKA DASHBOARD AMAN (Paste ini menggantikan perhitungan lama)
+# ==========================================
+
+# 1. Pastikan dulu format Tanggal benar-benar Datetime
+# (Penting! Kalau data kosong, Pandas suka lupa kalau ini kolom tanggal)
+if not df_tx.empty and 'Date' in df_tx.columns:
+    df_tx['Date'] = pd.to_datetime(df_tx['Date'], errors='coerce')
+
+# 2. Hitung Total Omzet (Dengan Pengecekan)
+if not df_tx.empty and 'Total' in df_tx.columns:
+    total_rev = df_tx['Total'].sum()
+else:
+    total_rev = 0
+
+# 3. Hitung Omzet Hari Ini (Dengan Pengecekan Ekstra)
+today_rev = 0
+if not df_tx.empty and 'Date' in df_tx.columns:
+    try:
+        # Cek apakah kolom Date sudah sukses jadi datetime (bukan NaT/Error)
+        valid_dates = df_tx.dropna(subset=['Date'])
+        # Filter hari ini
+        today_data = valid_dates[valid_dates['Date'].dt.date == CURRENT_DATE.date()]
+        today_rev = today_data['Total'].sum()
+    except Exception as e:
+        # Kalau masih error, anggap 0 dulu biar app gak mati
+        today_rev = 0
     
     st.metric("TOTAL REVENUE (YTD)", f"{total_revenue/1000000:.1f}M")
     st.metric("TODAY'S REVENUE", format_rupiah(today_revenue))
