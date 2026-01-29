@@ -20,7 +20,7 @@ import sqlite3
 import google.generativeai as genai
 
 # ==========================================
-# 0. DATABASE ENGINE (SQLITE3 WRAPPER) - FIXED VERSION
+# 0. DATABASE ENGINE (SQLITE3 WRAPPER) - V2.0 (FULL PERSISTENCE)
 # ==========================================
 class DatabaseManager:
     def __init__(self, db_name="farikhi_titan.db"):
@@ -28,162 +28,149 @@ class DatabaseManager:
         self.init_db()
 
     def get_connection(self):
-        return sqlite3.connect(self.db_name)
+        return sqlite3.connect(self.db_name, check_same_thread=False)
 
     def init_db(self):
-        """Membuat tabel jika belum ada"""
         conn = self.get_connection()
         c = conn.cursor()
         
-        # Tabel Menu (6 Kolom)
+        # 1. Menu & Transaksi (Sudah ada)
         c.execute('''CREATE TABLE IF NOT EXISTS menu (
-                        id TEXT PRIMARY KEY,
-                        menu_name TEXT,
-                        price REAL,
-                        category TEXT,
-                        icon TEXT,
-                        stock INTEGER
-                    )''')
+                        id TEXT PRIMARY KEY, menu_name TEXT, price REAL, 
+                        category TEXT, icon TEXT, stock INTEGER)''')
         
-        # Tabel Transaksi (11 Kolom - id autoincrement)
         c.execute('''CREATE TABLE IF NOT EXISTS transactions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        date TIMESTAMP,
-                        item_id TEXT,
-                        item_name TEXT,
-                        category TEXT,
-                        price REAL,
-                        qty INTEGER,
-                        total REAL,
-                        hour INTEGER,
-                        customer_type TEXT,
-                        payment_method TEXT
-                    )''')
+                        id INTEGER PRIMARY KEY AUTOINCREMENT, date TIMESTAMP, 
+                        item_id TEXT, item_name TEXT, category TEXT, price REAL, 
+                        qty INTEGER, total REAL, hour INTEGER, customer_type TEXT, payment_method TEXT)''')
+
+        # 2. TABEL BARU: KITCHEN (Agar orderan gak hilang)
+        c.execute('''CREATE TABLE IF NOT EXISTS kitchen (
+                        order_id TEXT PRIMARY KEY, table_no TEXT, items TEXT, 
+                        time TEXT, status TEXT)''')
+
+        # 3. TABEL BARU: TABLES (Agar status meja gak reset)
+        c.execute('''CREATE TABLE IF NOT EXISTS tables (
+                        table_id INTEGER PRIMARY KEY, status TEXT)''')
+        
+        # Inisialisasi 12 Meja jika tabel kosong
+        c.execute("SELECT count(*) FROM tables")
+        if c.fetchone()[0] == 0:
+            for i in range(1, 13):
+                c.execute("INSERT INTO tables (table_id, status) VALUES (?, ?)", (i, 'Empty'))
+
         conn.commit()
         conn.close()
 
+    # --- FUNGSI MENU & TRANSAKSI (SAMA SEPERTI SEBELUMNYA) ---
     def load_menu(self):
-        """Load menu dari DB ke Pandas DataFrame"""
         conn = self.get_connection()
-        # Gunakan try-except agar tidak error kalau tabel belum sempurna
         try:
             df = pd.read_sql("SELECT * FROM menu", conn)
-        except:
-            return pd.DataFrame() # Return kosong jika error
-        finally:
-            conn.close()
-        
+        except: return pd.DataFrame()
+        finally: conn.close()
         if not df.empty:
-            df = df.rename(columns={
-                'id': 'ID', 'menu_name': 'Menu', 'price': 'Harga', 
-                'category': 'Kategori', 'icon': 'Icon', 'stock': 'Stok'
-            })
+            df = df.rename(columns={'id': 'ID', 'menu_name': 'Menu', 'price': 'Harga', 'category': 'Kategori', 'icon': 'Icon', 'stock': 'Stok'})
         return df
 
     def save_transaction(self, tx_data):
-        """Menyimpan transaksi baru"""
         conn = self.get_connection()
         c = conn.cursor()
-        # FIX: Sebutkan nama kolom secara eksplisit agar ID otomatis terisi
-        c.execute('''INSERT INTO transactions 
-                    (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
+        c.execute('''INSERT INTO transactions (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
                 (tx_data['Date'], tx_data['ItemID'], tx_data['ItemName'], tx_data['Category'], 
                 tx_data['Price'], tx_data['Qty'], tx_data['Total'], tx_data['Hour'], 
                 tx_data['CustomerType'], tx_data['Payment']))
         conn.commit()
         conn.close()
-
+        
     def update_stock(self, item_id, new_stock):
-        """Update stok item"""
         conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("UPDATE menu SET stock = ? WHERE id = ?", (new_stock, item_id))
+        conn.execute("UPDATE menu SET stock = ? WHERE id = ?", (new_stock, item_id))
         conn.commit()
         conn.close()
 
     def load_transactions(self):
-        """Load history transaksi ke Pandas (Versi Anti-KeyError)"""
         conn = self.get_connection()
-        try:
-            df = pd.read_sql("SELECT * FROM transactions", conn)
-        except:
-            # Jika tabel belum ada/error, return DataFrame kosong dengan kolom yang BENAR
-            conn.close()
-            return pd.DataFrame(columns=[
-                'Date', 'ItemID', 'ItemName', 'Category', 'Price', 
-                'Qty', 'Total', 'Hour', 'CustomerType', 'Payment'
-            ])
-        finally:
-            conn.close()
-        
-        # 1. Lakukan Rename (JANGAN PAKAI IF NOT EMPTY)
-        # Kita rename kolom SQL (lowercase) ke Python (TitleCase)
-        df = df.rename(columns={
-            'date': 'Date',
-            'item_id': 'ItemID', 
-            'item_name': 'ItemName', 
-            'category': 'Category',
-            'price': 'Price', 
-            'qty': 'Qty', 
-            'total': 'Total', 
-            'hour': 'Hour',
-            'customer_type': 'CustomerType', 
-            'payment_method': 'Payment'
-        })
-
-        # 2. Pastikan kolom 'Total' benar-benar ada
-        # Ini jaring pengaman terakhir. Jika rename gagal, kita buat ulang strukturnya.
-        required_columns = ['Date', 'ItemID', 'ItemName', 'Category', 'Price', 'Qty', 'Total', 'Hour', 'CustomerType', 'Payment']
-        
-        # Cek apakah kolom 'Total' hilang?
-        if 'Total' not in df.columns:
-            return pd.DataFrame(columns=required_columns)
-
-        # 3. Convert format tanggal jika ada isinya
-        if not df.empty and 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'])
-            
+        try: df = pd.read_sql("SELECT * FROM transactions", conn)
+        except: return pd.DataFrame()
+        finally: conn.close()
+        if not df.empty:
+            df['Date'] = pd.to_datetime(df['date'])
+            df = df.rename(columns={'item_id': 'ItemID', 'item_name': 'ItemName', 'category': 'Category', 'price': 'Price', 'qty': 'Qty', 'total': 'Total', 'hour': 'Hour', 'customer_type': 'CustomerType', 'payment_method': 'Payment'})
         return df
 
     def seed_initial_data(self, initial_menu, initial_tx_df):
-        """Isi data awal dengan cara yang AMAN & FIX TIMESTAMP ERROR"""
+        # (Kode seeding sama seperti versi timestamp fix sebelumnya)
         conn = self.get_connection()
         c = conn.cursor()
-        
         try:
-            # 1. Cek & Isi Menu
             c.execute("SELECT count(*) FROM menu")
             if c.fetchone()[0] == 0:
-                print("Seeding Menu...")
                 for item in initial_menu:
-                    c.execute("""
-                        INSERT INTO menu (id, menu_name, price, category, icon, stock) 
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (item['ID'], item['Menu'], item['Harga'], item['Kategori'], item['Icon'], item['Stok']))
-            
-            # 2. Cek & Isi Transaksi
+                    c.execute("INSERT INTO menu (id, menu_name, price, category, icon, stock) VALUES (?, ?, ?, ?, ?, ?)", 
+                            (item['ID'], item['Menu'], item['Harga'], item['Kategori'], item['Icon'], item['Stok']))
             c.execute("SELECT count(*) FROM transactions")
             if c.fetchone()[0] == 0:
-                print("Seeding Transactions...")
                 for _, row in initial_tx_df.iterrows():
-                    # --- PERBAIKAN DI SINI ---
-                    # Ubah Pandas Timestamp menjadi Python Datetime standar
                     tgl_fix = row['Date'].to_pydatetime() 
-                    
-                    c.execute("""
-                        INSERT INTO transactions 
-                        (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (tgl_fix, row['ItemID'], row['ItemName'], row['Category'], 
-                        row['Price'], row['Qty'], row['Total'], row['Hour'], 
-                        row['CustomerType'], row['Payment']))
-            
+                    c.execute("INSERT INTO transactions (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
+                            (tgl_fix, row['ItemID'], row['ItemName'], row['Category'], row['Price'], row['Qty'], row['Total'], row['Hour'], row['CustomerType'], row['Payment']))
             conn.commit()
-        except Exception as e:
-            st.error(f"Error saat seeding database: {e}")
-        finally:
-            conn.close()
+        except: pass
+        finally: conn.close()
+
+    # --- FUNGSI BARU UNTUK KITCHEN & TABLES ---
+    
+    def add_kitchen_order(self, order_dict):
+        conn = self.get_connection()
+        # Item list kita simpan sebagai JSON string karena SQLite gak punya tipe Array
+        items_json = json.dumps(order_dict['items'])
+        conn.execute("INSERT INTO kitchen (order_id, table_no, items, time, status) VALUES (?, ?, ?, ?, ?)",
+                    (order_dict['id'], order_dict['table'], items_json, order_dict['time'], order_dict['status']))
+        conn.commit()
+        conn.close()
+
+    def get_kitchen_queue(self):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT * FROM kitchen WHERE status != 'Completed'") # Ambil yg belum selesai
+        rows = c.fetchall()
+        conn.close()
+        
+        queue = []
+        for r in rows:
+            queue.append({
+                'id': r[0], 'table': r[1], 
+                'items': json.loads(r[2]), # Convert balik JSON str ke List Python
+                'time': r[3], 'status': r[4]
+            })
+        return queue
+
+    def update_kitchen_status(self, order_id, new_status):
+        conn = self.get_connection()
+        if new_status == 'Completed':
+            # Kalau selesai, bisa kita hapus atau mark completed
+            conn.execute("DELETE FROM kitchen WHERE order_id = ?", (order_id,))
+        else:
+            conn.execute("UPDATE kitchen SET status = ? WHERE order_id = ?", (new_status, order_id))
+        conn.commit()
+        conn.close()
+
+    def get_tables(self):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT * FROM tables")
+        rows = c.fetchall()
+        conn.close()
+        return [{'id': r[0], 'status': r[1]} for r in rows]
+
+    def update_table_status(self, table_id, status):
+        conn = self.get_connection()
+        conn.execute("UPDATE tables SET status = ? WHERE table_id = ?", (status, table_id))
+        conn.commit()
+        conn.close()
+
 # Inisialisasi DB Manager
 db_manager = DatabaseManager()
 # ==========================================
@@ -540,12 +527,13 @@ if 'transactions' not in st.session_state:
 if 'cart' not in st.session_state: 
     st.session_state.cart = []
 
-if 'kitchen_queue' not in st.session_state: 
-    st.session_state.kitchen_queue = []
+# Load Kitchen Queue dari Database
+if 'kitchen_queue' not in st.session_state:
+    st.session_state.kitchen_queue = db_manager.get_kitchen_queue()
 
-if 'tables' not in st.session_state: 
-    # Create 12 Tables (Status reset ke Empty setiap restart server, bisa diubah ke DB jika mau permanen)
-    st.session_state.tables = [{'id': i, 'status': 'Empty', 'order': None} for i in range(1, 13)]
+# Load Status Meja dari Database
+if 'tables' not in st.session_state:
+    st.session_state.tables = db_manager.get_tables()
 
 if 'xp' not in st.session_state: 
     st.session_state.xp = 5000
@@ -604,7 +592,6 @@ def generate_pdf_download_link(df_tx):
     return pdf.output(dest='S').encode('latin-1')
 
 def add_to_kitchen(cart_items, table_no="POS"):
-    # ... (lanjutan kode kitchen kamu di bawah sini) ...
     order_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     order = {
         'id': order_id,
@@ -613,6 +600,9 @@ def add_to_kitchen(cart_items, table_no="POS"):
         'time': datetime.now().strftime("%H:%M"),
         'status': 'Pending'
     }
+    # 1. Simpan ke DB
+    db_manager.add_kitchen_order(order)
+    # 2. Update Session State (Visual)
     st.session_state.kitchen_queue.append(order)
 
 # ==========================================
@@ -940,6 +930,9 @@ with tabs[0]:
                 # 4. Update Table Status
                 if table_select != "TAKEAWAY":
                     t_id = int(table_select[1:])
+                    # Update DB
+                    db_manager.update_table_status(t_id, 'Occupied')
+                    # Update Visual
                     st.session_state.tables[t_id-1]['status'] = 'Occupied'
                 
                 st.session_state.cart = []
@@ -980,10 +973,17 @@ with tabs[1]:
                     
                     if order['status'] == 'Pending':
                         if st.button("START COOKING", key=f"cook_{order['id']}"):
+                            # Update DB
+                            db_manager.update_kitchen_status(order['id'], 'Cooking')
+                            # Update Visual
                             order['status'] = 'Cooking'
                             st.rerun()
+                            
                     elif order['status'] == 'Cooking':
                         if st.button("READY TO SERVE", key=f"serve_{order['id']}"):
+                            # Update DB (Hapus/Complete)
+                            db_manager.update_kitchen_status(order['id'], 'Completed')
+                            # Update Visual
                             st.session_state.kitchen_queue.pop(i)
                             st.toast(f"Order {order['id']} Served!", icon="🍽️")
                             st.rerun()
@@ -1010,6 +1010,9 @@ with tabs[2]:
             
             if table['status'] == 'Occupied':
                 if st.button(f"CLEAR TABLE {table['id']}", key=f"clr_{table['id']}"):
+                    # Update DB
+                    db_manager.update_table_status(table['id'], 'Empty')
+                    # Update Visual
                     table['status'] = 'Empty'
                     st.rerun()
 
