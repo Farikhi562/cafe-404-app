@@ -102,22 +102,47 @@ class DatabaseManager:
         conn.close()
 
     def load_transactions(self):
-        """Load history transaksi ke Pandas"""
+        """Load history transaksi ke Pandas (Versi Anti-KeyError)"""
         conn = self.get_connection()
         try:
             df = pd.read_sql("SELECT * FROM transactions", conn)
         except:
-            return pd.DataFrame()
+            # Jika tabel belum ada/error, return DataFrame kosong dengan kolom yang BENAR
+            conn.close()
+            return pd.DataFrame(columns=[
+                'Date', 'ItemID', 'ItemName', 'Category', 'Price', 
+                'Qty', 'Total', 'Hour', 'CustomerType', 'Payment'
+            ])
         finally:
             conn.close()
         
-        if not df.empty:
-            df['Date'] = pd.to_datetime(df['date'])
-            df = df.rename(columns={
-                'item_id': 'ItemID', 'item_name': 'ItemName', 'category': 'Category',
-                'price': 'Price', 'qty': 'Qty', 'total': 'Total', 'hour': 'Hour',
-                'customer_type': 'CustomerType', 'payment_method': 'Payment'
-            })
+        # 1. Lakukan Rename (JANGAN PAKAI IF NOT EMPTY)
+        # Kita rename kolom SQL (lowercase) ke Python (TitleCase)
+        df = df.rename(columns={
+            'date': 'Date',
+            'item_id': 'ItemID', 
+            'item_name': 'ItemName', 
+            'category': 'Category',
+            'price': 'Price', 
+            'qty': 'Qty', 
+            'total': 'Total', 
+            'hour': 'Hour',
+            'customer_type': 'CustomerType', 
+            'payment_method': 'Payment'
+        })
+
+        # 2. Pastikan kolom 'Total' benar-benar ada
+        # Ini jaring pengaman terakhir. Jika rename gagal, kita buat ulang strukturnya.
+        required_columns = ['Date', 'ItemID', 'ItemName', 'Category', 'Price', 'Qty', 'Total', 'Hour', 'CustomerType', 'Payment']
+        
+        # Cek apakah kolom 'Total' hilang?
+        if 'Total' not in df.columns:
+            return pd.DataFrame(columns=required_columns)
+
+        # 3. Convert format tanggal jika ada isinya
+        if not df.empty and 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'])
+            
         return df
 
     def seed_initial_data(self, initial_menu, initial_tx_df):
