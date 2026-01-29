@@ -58,20 +58,49 @@ class DatabaseManager:
 
     def load_transactions(self):
         try:
+            # 1. Ambil data dari Google Sheet
             data = self.ws_tx.get_all_records()
-            df = pd.DataFrame(data)
-            if not df.empty:
-                df['Date'] = pd.to_datetime(df['date'])
-                df = df.rename(columns={
-                    'item_id': 'ItemID', 'item_name': 'ItemName', 
-                    'category': 'Category', 'price': 'Price', 
-                    'qty': 'Qty', 'total': 'Total', 
-                    'hour': 'Hour', 'customer_type': 'CustomerType', 
-                    'payment_method': 'Payment'
-                })
-            return df
-        except: return pd.DataFrame()
+            
+            # 2. DEFINISIKAN KOLOM WAJIB (Ini Penyelamatnya!)
+            expected_columns = ['Date', 'ItemID', 'ItemName', 'Category', 'Price', 
+                               'Qty', 'Total', 'Hour', 'CustomerType', 'Payment']
+            
+            # 3. Cek jika data kosong
+            if not data:
+                # Kembalikan tabel kosong TAPI dengan nama kolom yang benar
+                return pd.DataFrame(columns=expected_columns)
 
+            # 4. Jika ada data, buat DataFrame normal
+            df = pd.DataFrame(data)
+            
+            # 5. Ganti nama kolom (Google Sheet huruf kecil -> App huruf besar)
+            # Pastikan nama di kiri (lowercase) SAMA PERSIS dengan header di Excel kamu
+            df = df.rename(columns={
+                'date': 'Date', 
+                'item_id': 'ItemID', 
+                'item_name': 'ItemName', 
+                'category': 'Category', 
+                'price': 'Price', 
+                'qty': 'Qty', 
+                'total': 'Total', 
+                'hour': 'Hour', 
+                'customer_type': 'CustomerType', 
+                'payment_method': 'Payment'
+            })
+            
+            # 6. Pastikan kolom 'Total' benar-benar terbentuk setelah rename
+            if 'Total' not in df.columns:
+                 # Kalau rename gagal (misal header excel salah ketik), paksa buat kolom kosong
+                 return pd.DataFrame(columns=expected_columns)
+
+            # 7. Format Tanggal
+            df['Date'] = pd.to_datetime(df['Date'])
+            
+            return df
+            
+        except Exception as e:
+            # Jika error parah, tetap balikin tabel kosong biar app gak mati
+            return pd.DataFrame(columns=['Date', 'ItemID', 'ItemName', 'Category', 'Price', 'Qty', 'Total', 'Hour', 'CustomerType', 'Payment'])
     # --- FUNGSI TULIS DATA (WRITE) ---
     def save_transaction(self, tx_data):
         row = [
