@@ -53,27 +53,30 @@ class DatabaseManager:
             st.stop()
 
     # --- FUNGSI BACA MENU (ANTI KEYERROR) ---
+    # --- FUNGSI BACA MENU (VERSION 3.0: ANTI HEADER DUPLIKAT) ---
     def load_menu(self):
         try:
-            # 1. Ambil data
-            data = self.ws_menu.get_all_records()
+            # Kita pakai get_all_values (ambil mentahnya aja) biar gak error header kosong
+            all_rows = self.ws_menu.get_all_values()
             
-            # Jika kosong, balikin DataFrame kosong dengan kolom wajib
-            if not data:
+            # Cek data kosong
+            if not all_rows or len(all_rows) < 2:
                 return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
 
-            df = pd.DataFrame(data)
-            
-            # 2. BERSIHKAN NAMA KOLOM (PENTING!)
-            # Kita paksa semua nama kolom jadi huruf kecil biar tidak error beda casing
-            df.columns = [x.lower().strip() for x in df.columns]
+            # Baris 0 adalah Header, Baris 1 dst adalah Data
+            headers = [h.strip().lower() for h in all_rows[0]] # Kecilin semua huruf header
+            data = all_rows[1:]
 
-            # 3. Rename ke format Aplikasi (Bahasa Indonesia)
-            # 'menu_name' di sheet -> jadi 'Menu' di aplikasi
+            df = pd.DataFrame(data, columns=headers)
+
+            # Buang kolom yang headernya kosong (penyebab error tadi)
+            df = df.loc[:, df.columns != '']
+
+            # Rename ke format Aplikasi
             rename_map = {
                 'id': 'ID',
                 'menu_name': 'Menu',
-                'menu name': 'Menu', # Jaga-jaga kalau gak pake underscore
+                'menu name': 'Menu',
                 'price': 'Harga',
                 'category': 'Kategori',
                 'icon': 'Icon',
@@ -81,24 +84,22 @@ class DatabaseManager:
             }
             df = df.rename(columns=rename_map)
 
-            # 4. CEK APAKAH KOLOM 'Kategori' ADA?
-            # Kalau user salah ketik header di Excel, kita buat default
-            if 'Kategori' not in df.columns:
-                df['Kategori'] = 'Uncategorized' # Isi default biar gak crash
-            
-            if 'Menu' not in df.columns:
-                df['Menu'] = 'Unknown Item'
+            # Default value jika kolom hilang
+            if 'Kategori' not in df.columns: df['Kategori'] = 'Uncategorized'
+            if 'Menu' not in df.columns: df['Menu'] = 'Unknown Item'
 
-            # 5. Pastikan Harga & Stok berupa Angka
-            df['Harga'] = pd.to_numeric(df['Harga'], errors='coerce').fillna(0)
-            df['Stok'] = pd.to_numeric(df['Stok'], errors='coerce').fillna(0)
+            # Konversi Angka (Penting!)
+            # Hapus 'Rp' atau koma kalau ada user iseng nulis manual
+            for col in ['Harga', 'Stok']:
+                if col in df.columns:
+                    df[col] = df[col].astype(str).str.replace(r'[^\d]', '', regex=True)
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
             return df
             
         except Exception as e:
-            # Kalau error parah, return dataframe kosong biar aplikasi jalan terus
             st.error(f"Error Load Menu: {e}")
-            return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
+            return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok']))
 
     def load_transactions(self):
         try:
