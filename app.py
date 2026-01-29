@@ -766,7 +766,6 @@ with tabs[5]:
                     
                     # Ambil data menu
                     menu_text = st.session_state.menu_db[['Menu', 'Harga', 'Stok']].to_string(index=False)
-                    
                     # Hitung ringkasan keuangan
                     df_tx = st.session_state.transactions
                     total_rev = df_tx['Total'].sum() if not df_tx.empty else 0
