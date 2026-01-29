@@ -443,17 +443,7 @@ if 'db_initialized' not in st.session_state:
     with st.spinner("CONNECTING TO TITAN DATABASE & SYNCHRONIZING HISTORY..."):
         # 1. Siapkan data awal (jika DB benar-benar kosong)
         ds_core = DataScienceCore()
-        initial_menu_data = get_initial_menu()
         
-        # Generate dummy history HANYA jika kita perlu seeding (akan dicek di dalam method seed_initial_data)
-        # Tapi kita generate dulu di sini untuk dikirim sebagai parameter
-        dummy_tx_data = ds_core.generate_historical_data(days=120)
-        
-        # 2. Kirim ke DB Manager untuk dicek dan disimpan (hanya save jika tabel kosong)
-        db_manager.seed_initial_data(initial_menu_data, dummy_tx_data)
-        
-        st.session_state.db_initialized = True
-
 # B. LOAD DATA KE RAM (SESSION STATE)
 # Kita load dari SQLite ke Session State agar akses data super cepat (tidak query SQL terus-menerus)
 
