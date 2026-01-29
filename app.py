@@ -19,7 +19,7 @@ from fpdf import FPDF
 import sqlite3
 
 # ==========================================
-# 0. DATABASE ENGINE (SQLITE3 WRAPPER)
+# 0. DATABASE ENGINE (SQLITE3 WRAPPER) - FIXED VERSION
 # ==========================================
 class DatabaseManager:
     def __init__(self, db_name="farikhi_titan.db"):
@@ -34,7 +34,7 @@ class DatabaseManager:
         conn = self.get_connection()
         c = conn.cursor()
         
-        # Tabel Menu
+        # Tabel Menu (6 Kolom)
         c.execute('''CREATE TABLE IF NOT EXISTS menu (
                         id TEXT PRIMARY KEY,
                         menu_name TEXT,
@@ -44,7 +44,7 @@ class DatabaseManager:
                         stock INTEGER
                     )''')
         
-        # Tabel Transaksi
+        # Tabel Transaksi (11 Kolom - id autoincrement)
         c.execute('''CREATE TABLE IF NOT EXISTS transactions (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         date TIMESTAMP,
@@ -64,20 +64,26 @@ class DatabaseManager:
     def load_menu(self):
         """Load menu dari DB ke Pandas DataFrame"""
         conn = self.get_connection()
-        df = pd.read_sql("SELECT * FROM menu", conn)
-        conn.close()
+        # Gunakan try-except agar tidak error kalau tabel belum sempurna
+        try:
+            df = pd.read_sql("SELECT * FROM menu", conn)
+        except:
+            return pd.DataFrame() # Return kosong jika error
+        finally:
+            conn.close()
         
-        # Rename kolom agar sesuai dengan kode lama kamu
-        df = df.rename(columns={
-            'id': 'ID', 'menu_name': 'Menu', 'price': 'Harga', 
-            'category': 'Kategori', 'icon': 'Icon', 'stock': 'Stok'
-        })
+        if not df.empty:
+            df = df.rename(columns={
+                'id': 'ID', 'menu_name': 'Menu', 'price': 'Harga', 
+                'category': 'Kategori', 'icon': 'Icon', 'stock': 'Stok'
+            })
         return df
 
     def save_transaction(self, tx_data):
         """Menyimpan transaksi baru"""
         conn = self.get_connection()
         c = conn.cursor()
+        # FIX: Sebutkan nama kolom secara eksplisit agar ID otomatis terisi
         c.execute('''INSERT INTO transactions 
                     (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
@@ -98,12 +104,15 @@ class DatabaseManager:
     def load_transactions(self):
         """Load history transaksi ke Pandas"""
         conn = self.get_connection()
-        df = pd.read_sql("SELECT * FROM transactions", conn)
-        conn.close()
+        try:
+            df = pd.read_sql("SELECT * FROM transactions", conn)
+        except:
+            return pd.DataFrame()
+        finally:
+            conn.close()
         
         if not df.empty:
-            df['Date'] = pd.to_datetime(df['date']) # Convert string ke datetime untuk ML
-            # Rename kolom agar sesuai dengan kode lama
+            df['Date'] = pd.to_datetime(df['date'])
             df = df.rename(columns={
                 'item_id': 'ItemID', 'item_name': 'ItemName', 'category': 'Category',
                 'price': 'Price', 'qty': 'Qty', 'total': 'Total', 'hour': 'Hour',
@@ -112,30 +121,41 @@ class DatabaseManager:
         return df
 
     def seed_initial_data(self, initial_menu, initial_tx_df):
-        """Isi data awal jika database kosong (biar nggak error pas pertama run)"""
+        """Isi data awal dengan cara yang AMAN"""
         conn = self.get_connection()
         c = conn.cursor()
         
-        # Cek apakah menu kosong
-        c.execute("SELECT count(*) FROM menu")
-        if c.fetchone()[0] == 0:
-            for item in initial_menu:
-                c.execute("INSERT INTO menu VALUES (?, ?, ?, ?, ?, ?)", 
-                    (item['ID'], item['Menu'], item['Harga'], item['Kategori'], item['Icon'], item['Stok']))
-        
-        # Cek apakah transaksi kosong (jika kosong, isi dari generator sintetik kamu)
-        c.execute("SELECT count(*) FROM transactions")
-        if c.fetchone()[0] == 0:
-            for _, row in initial_tx_df.iterrows():
-                c.execute('''INSERT INTO transactions 
-                    (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                (row['Date'], row['ItemID'], row['ItemName'], row['Category'], 
-                row['Price'], row['Qty'], row['Total'], row['Hour'], 
-                row['CustomerType'], row['Payment']))
-        
-        conn.commit()
-        conn.close()
+        try:
+            # 1. Cek & Isi Menu
+            c.execute("SELECT count(*) FROM menu")
+            if c.fetchone()[0] == 0:
+                print("Seeding Menu...")
+                for item in initial_menu:
+                    # FIX: Sebutkan kolom (id, menu_name, dll)
+                    c.execute("""
+                        INSERT INTO menu (id, menu_name, price, category, icon, stock) 
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (item['ID'], item['Menu'], item['Harga'], item['Kategori'], item['Icon'], item['Stok']))
+            
+            # 2. Cek & Isi Transaksi
+            c.execute("SELECT count(*) FROM transactions")
+            if c.fetchone()[0] == 0:
+                print("Seeding Transactions...")
+                for _, row in initial_tx_df.iterrows():
+                    # FIX: Sebutkan kolom (date, item_id, dll) - JANGAN MASUKKAN 'id' (biar auto)
+                    c.execute("""
+                        INSERT INTO transactions 
+                        (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (row['Date'], row['ItemID'], row['ItemName'], row['Category'], 
+                        row['Price'], row['Qty'], row['Total'], row['Hour'], 
+                        row['CustomerType'], row['Payment']))
+            
+            conn.commit()
+        except Exception as e:
+            st.error(f"Error saat seeding database: {e}")
+        finally:
+            conn.close()
 
 # Inisialisasi DB Manager
 db_manager = DatabaseManager()
