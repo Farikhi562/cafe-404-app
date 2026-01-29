@@ -16,166 +16,111 @@ from sklearn.metrics import mean_absolute_error, r2_score
 import warnings
 import base64
 from fpdf import FPDF
-import sqlite3
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import google.generativeai as genai
 
 # ==========================================
-# 0. DATABASE ENGINE (SQLITE3 WRAPPER) - V2.0 (FULL PERSISTENCE)
+# 0. DATABASE ENGINE (GOOGLE SHEETS EDITION)
 # ==========================================
 class DatabaseManager:
-    def __init__(self, db_name="farikhi_titan.db"):
-        self.db_name = db_name
-        self.init_db()
-
-    def get_connection(self):
-        return sqlite3.connect(self.db_name, check_same_thread=False)
-
-    def init_db(self):
-        conn = self.get_connection()
-        c = conn.cursor()
-        
-        # 1. Menu & Transaksi (Sudah ada)
-        c.execute('''CREATE TABLE IF NOT EXISTS menu (
-                        id TEXT PRIMARY KEY, menu_name TEXT, price REAL, 
-                        category TEXT, icon TEXT, stock INTEGER)''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS transactions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT, date TIMESTAMP, 
-                        item_id TEXT, item_name TEXT, category TEXT, price REAL, 
-                        qty INTEGER, total REAL, hour INTEGER, customer_type TEXT, payment_method TEXT)''')
-
-        # 2. TABEL BARU: KITCHEN (Agar orderan gak hilang)
-        c.execute('''CREATE TABLE IF NOT EXISTS kitchen (
-                        order_id TEXT PRIMARY KEY, table_no TEXT, items TEXT, 
-                        time TEXT, status TEXT)''')
-
-        # 3. TABEL BARU: TABLES (Agar status meja gak reset)
-        c.execute('''CREATE TABLE IF NOT EXISTS tables (
-                        table_id INTEGER PRIMARY KEY, status TEXT)''')
-        
-        # Inisialisasi 12 Meja jika tabel kosong
-        c.execute("SELECT count(*) FROM tables")
-        if c.fetchone()[0] == 0:
-            for i in range(1, 13):
-                c.execute("INSERT INTO tables (table_id, status) VALUES (?, ?)", (i, 'Empty'))
-
-        conn.commit()
-        conn.close()
-
-    # --- FUNGSI MENU & TRANSAKSI (SAMA SEPERTI SEBELUMNYA) ---
-    def load_menu(self):
-        conn = self.get_connection()
+    def __init__(self):
         try:
-            df = pd.read_sql("SELECT * FROM menu", conn)
-        except: return pd.DataFrame()
-        finally: conn.close()
-        if not df.empty:
-            df = df.rename(columns={'id': 'ID', 'menu_name': 'Menu', 'price': 'Harga', 'category': 'Kategori', 'icon': 'Icon', 'stock': 'Stok'})
-        return df
+            # 1. Setup Koneksi ke Google Sheets
+            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+            # Ambil kunci dari Secrets
+            creds_dict = dict(st.secrets["gcp_service_account"]) 
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            self.client = gspread.authorize(creds)
+            
+            # 2. Buka Spreadsheet "Farikhi Titan DB"
+            self.sheet = self.client.open("Farikhi Titan DB")
+            
+            # 3. Siapkan Tab (Worksheet)
+            self.ws_menu = self.sheet.worksheet("menu")
+            self.ws_tx = self.sheet.worksheet("transactions")
+            # self.ws_users = self.sheet.worksheet("users") # (Opsional nanti)
 
-    def save_transaction(self, tx_data):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute('''INSERT INTO transactions (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                (tx_data['Date'], tx_data['ItemID'], tx_data['ItemName'], tx_data['Category'], 
-                tx_data['Price'], tx_data['Qty'], tx_data['Total'], tx_data['Hour'], 
-                tx_data['CustomerType'], tx_data['Payment']))
-        conn.commit()
-        conn.close()
-        
-    def update_stock(self, item_id, new_stock):
-        conn = self.get_connection()
-        conn.execute("UPDATE menu SET stock = ? WHERE id = ?", (new_stock, item_id))
-        conn.commit()
-        conn.close()
+        except Exception as e:
+            st.error(f"⚠️ Gagal Konek Google Sheets: {e}")
+            st.stop()
+
+    # --- FUNGSI BACA DATA (READ) ---
+    def load_menu(self):
+        try:
+            # Tarik semua data dari tab 'menu'
+            data = self.ws_menu.get_all_records()
+            df = pd.DataFrame(data)
+            
+            # Rename kolom biar sesuai sama aplikasi kita
+            if not df.empty:
+                df = df.rename(columns={
+                    'id': 'ID', 'menu_name': 'Menu', 
+                    'price': 'Harga', 'category': 'Kategori', 
+                    'icon': 'Icon', 'stock': 'Stok'
+                })
+            return df
+        except: return pd.DataFrame()
 
     def load_transactions(self):
-        conn = self.get_connection()
-        try: df = pd.read_sql("SELECT * FROM transactions", conn)
-        except: return pd.DataFrame()
-        finally: conn.close()
-        if not df.empty:
-            df['Date'] = pd.to_datetime(df['date'])
-            df = df.rename(columns={'item_id': 'ItemID', 'item_name': 'ItemName', 'category': 'Category', 'price': 'Price', 'qty': 'Qty', 'total': 'Total', 'hour': 'Hour', 'customer_type': 'CustomerType', 'payment_method': 'Payment'})
-        return df
-
-    def seed_initial_data(self, initial_menu, initial_tx_df):
-        # (Kode seeding sama seperti versi timestamp fix sebelumnya)
-        conn = self.get_connection()
-        c = conn.cursor()
         try:
-            c.execute("SELECT count(*) FROM menu")
-            if c.fetchone()[0] == 0:
-                for item in initial_menu:
-                    c.execute("INSERT INTO menu (id, menu_name, price, category, icon, stock) VALUES (?, ?, ?, ?, ?, ?)", 
-                            (item['ID'], item['Menu'], item['Harga'], item['Kategori'], item['Icon'], item['Stok']))
-            c.execute("SELECT count(*) FROM transactions")
-            if c.fetchone()[0] == 0:
-                for _, row in initial_tx_df.iterrows():
-                    tgl_fix = row['Date'].to_pydatetime() 
-                    c.execute("INSERT INTO transactions (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-                            (tgl_fix, row['ItemID'], row['ItemName'], row['Category'], row['Price'], row['Qty'], row['Total'], row['Hour'], row['CustomerType'], row['Payment']))
-            conn.commit()
-        except: pass
-        finally: conn.close()
+            # Tarik semua data dari tab 'transactions'
+            data = self.ws_tx.get_all_records()
+            df = pd.DataFrame(data)
+            
+            # Rename kolom & format tanggal
+            if not df.empty:
+                df['Date'] = pd.to_datetime(df['date'])
+                df = df.rename(columns={
+                    'item_id': 'ItemID', 'item_name': 'ItemName', 
+                    'category': 'Category', 'price': 'Price', 
+                    'qty': 'Qty', 'total': 'Total', 
+                    'hour': 'Hour', 'customer_type': 'CustomerType', 
+                    'payment_method': 'Payment'
+                })
+            return df
+        except: return pd.DataFrame()
 
-    # --- FUNGSI BARU UNTUK KITCHEN & TABLES ---
-    
-    def add_kitchen_order(self, order_dict):
-        conn = self.get_connection()
-        # Item list kita simpan sebagai JSON string karena SQLite gak punya tipe Array
-        items_json = json.dumps(order_dict['items'])
-        conn.execute("INSERT INTO kitchen (order_id, table_no, items, time, status) VALUES (?, ?, ?, ?, ?)",
-                    (order_dict['id'], order_dict['table'], items_json, order_dict['time'], order_dict['status']))
-        conn.commit()
-        conn.close()
+    # --- FUNGSI TULIS DATA (WRITE) ---
+    def save_transaction(self, tx_data):
+        # Siapkan baris data urut sesuai kolom di Excel
+        row = [
+            str(tx_data['Date']), 
+            tx_data['ItemID'], 
+            tx_data['ItemName'], 
+            tx_data['Category'], 
+            tx_data['Price'], 
+            tx_data['Qty'], 
+            tx_data['Total'], 
+            tx_data['Hour'], 
+            tx_data['CustomerType'], 
+            tx_data['Payment']
+        ]
+        # Tulis ke baris paling bawah
+        self.ws_tx.append_row(row)
 
-    def get_kitchen_queue(self):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM kitchen WHERE status != 'Completed'") # Ambil yg belum selesai
-        rows = c.fetchall()
-        conn.close()
-        
-        queue = []
-        for r in rows:
-            queue.append({
-                'id': r[0], 'table': r[1], 
-                'items': json.loads(r[2]), # Convert balik JSON str ke List Python
-                'time': r[3], 'status': r[4]
-            })
-        return queue
+    def update_stock(self, item_id, new_stock):
+        try:
+            # Cari baris mana yang punya ID item tersebut
+            cell = self.ws_menu.find(item_id)
+            # Update kolom Stok (Anggap kolom F adalah kolom ke-6)
+            self.ws_menu.update_cell(cell.row, 6, new_stock) 
+        except Exception as e:
+            print(f"Gagal update stok: {e}")
 
-    def update_kitchen_status(self, order_id, new_status):
-        conn = self.get_connection()
-        if new_status == 'Completed':
-            # Kalau selesai, bisa kita hapus atau mark completed
-            conn.execute("DELETE FROM kitchen WHERE order_id = ?", (order_id,))
-        else:
-            conn.execute("UPDATE kitchen SET status = ? WHERE order_id = ?", (new_status, order_id))
-        conn.commit()
-        conn.close()
-
-    def get_tables(self):
-        conn = self.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT * FROM tables")
-        rows = c.fetchall()
-        conn.close()
-        return [{'id': r[0], 'status': r[1]} for r in rows]
+    # --- FITUR KITCHEN & TABLE (PAKAI MEMORI SEMENTARA) ---
+    # Karena Google Sheet agak lambat buat real-time kitchen, kita simpan di RAM dulu
+    def add_kitchen_order(self, order):
+        if 'kitchen_queue' not in st.session_state: st.session_state.kitchen_queue = []
+        st.session_state.kitchen_queue.append(order)
 
     def update_table_status(self, table_id, status):
-        conn = self.get_connection()
-        conn.execute("UPDATE tables SET status = ? WHERE table_id = ?", (status, table_id))
-        conn.commit()
-        conn.close()
+        # Update visual di session state saja
+        if 'tables' in st.session_state:
+            st.session_state.tables[table_id-1]['status'] = status
 
-# Inisialisasi DB Manager
+# Inisialisasi Database Baru
 db_manager = DatabaseManager()
-# ==========================================
-# 1. SYSTEM KERNEL & CONFIGURATION
-# ==========================================
 
 
 # ==========================================
@@ -606,35 +551,61 @@ def add_to_kitchen(cart_items, table_no="POS"):
     st.session_state.kitchen_queue.append(order)
 
 # ==========================================
-# 6. LOGIN SYSTEM (AUTHENTICATION LAYER)
+# 6. LOGIN SYSTEM (SECURE AUTHENTICATION v2.0)
 # ==========================================
-if not st.session_state.logged_in:
-    c1, c2, c3 = st.columns([1,2,1])
-    with c2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("""
-        <div class="titan-card" style="text-align:center;">
-            <h1 style="font-size:3em;">FARIKHI OS</h1>
-            <h3 style="color:#00E5FF;">TITAN EDITION v9.0</h3>
-            <p style="font-family:'Share Tech Mono'; color:#888;">ENTERPRISE RESOURCE PLANNING</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        u = st.text_input("USER HASH", "admin")
-        p = st.text_input("ACCESS TOKEN", "admin", type="password")
-        
-        if st.button("INITIATE SEQUENCE", use_container_width=True):
-            if u == "admin" and p == "admin":
-                progress_text = "LOADING MODULES"
-                my_bar = st.progress(0, text=progress_text)
-                for percent_complete in range(100):
-                    time.sleep(0.01)
-                    my_bar.progress(percent_complete + 1, text=f"LOADING MODULES: {percent_complete}%")
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("SECURITY BREACH DETECTED")
-    st.stop()
+def check_password():
+    """Returns `True` if the user had a correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["username"] in st.secrets["passwords"] and \
+            st.session_state["password"] == st.secrets["passwords"][st.session_state["username"]]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Hapus password dari session state biar aman
+            del st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # Tampilan Awal Login
+        c1, c2, c3 = st.columns([1,2,1])
+        with c2:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown("""
+            <div class="titan-card" style="text-align:center;">
+                <h1 style="font-size:3em;">FARIKHI OS</h1>
+                <h3 style="color:#00E5FF;">TITAN SECURE LOGIN</h3>
+                <p style="font-family:'Share Tech Mono'; color:#888;">ENTERPRISE RESOURCE PLANNING</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.text_input("OPERATOR ID", key="username")
+            st.text_input("ACCESS TOKEN", type="password", key="password")
+            
+            if st.button("INITIATE SEQUENCE", use_container_width=True):
+                password_entered()
+                
+        if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+            st.error("⛔ ACCESS DENIED: INVALID CREDENTIALS")
+            
+        return False
+    
+    return st.session_state["password_correct"]
+
+# Jalankan Pengecekan Login
+if not check_password():
+    st.stop()  # Stop aplikasi jika belum login
+
+# Jika kode sampai sini, berarti Login Berhasil
+if not st.session_state.get('logged_in'):
+    st.session_state.logged_in = True
+    # Efek Loading Keren
+    progress_text = "DECRYPTING DATA STREAMS..."
+    my_bar = st.progress(0, text=progress_text)
+    for percent_complete in range(100):
+        time.sleep(0.005)
+        my_bar.progress(percent_complete + 1, text=f"LOADING MODULES: {percent_complete}%")
+    st.rerun()
 
 # ==========================================
 # 7. MAIN INTERFACE (SIDEBAR & HEADER)
@@ -692,6 +663,13 @@ with st.sidebar:
     
     st.markdown("---")
     if st.button("🛑 EMERGENCY SHUTDOWN"):
+        st.session_state.logged_in = False
+        st.rerun()
+
+    if st.button("🚪 SECURE LOGOUT"):
+        # Hapus session state kunci
+        if "password_correct" in st.session_state:
+            del st.session_state["password_correct"]
         st.session_state.logged_in = False
         st.rerun()
 
