@@ -727,8 +727,10 @@ tabs = st.tabs([
     "💬 LIVE CHAT",   # <-- Pastikan ada ini
     "🌐 PUBLIC WEB"   # <-- Pastikan ada ini
 ])
+# ... (pastikan import google.generativeai as genai sudah ada di paling atas file app.py)
+
 # ==========================================
-# TAB 6: CHATBOT S.A.R.A (SMART VERSION)
+# TAB 6: CHATBOT S.A.R.A (AUTO-DETECT VERSION)
 # ==========================================
 with tabs[5]:
     st.markdown("### 💬 S.A.R.A INTELLIGENCE (POWERED BY GEMINI)")
@@ -743,7 +745,7 @@ with tabs[5]:
     col_chat, col_info = st.columns([3, 1])
     
     with col_info:
-        st.info("🧠 **AI Mode: ACTIVE**\nS.A.R.A sekarang bisa menganalisa data secara mendalam. Tanyakan apa saja!")
+        st.info("🧠 **AI Mode: ACTIVE**\nS.A.R.A sekarang bisa menganalisa data secara mendalam.")
         if st.button("Hapus Chat History"):
             st.session_state.chat_history = []
             st.rerun()
@@ -755,59 +757,48 @@ with tabs[5]:
         
         # Input User
         if user_query := st.chat_input("Perintah AI..."):
-            # 1. Tampilkan pertanyaan user
             st.session_state.chat_history.append({"role":"user", "content":user_query})
             st.chat_message("user").write(user_query)
             
-            with st.spinner("S.A.R.A is thinking..."):
+            with st.spinner("S.A.R.A is connecting to brain..."):
                 try:
-                    # 2. SIAPKAN DATA KONTEKS (INI RAHASIANYA BIAR PINTER)
-                    # Kita ubah data menu & transaksi jadi teks biar bisa dibaca AI
+                    # --- FITUR AUTO-DETECT MODEL (Supaya gak Error 404 lagi) ---
+                    # Kita cari model yang support 'generateContent'
+                    active_model_name = None
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            active_model_name = m.name
+                            break # Ambil yang pertama ketemu (biasanya gemini-pro atau gemini-1.5-flash)
                     
-                    # Ambil data menu
+                    if not active_model_name:
+                        raise Exception("Tidak ada model AI yang aktif di akun ini.")
+                    
+                    # -----------------------------------------------------------
+
+                    # Siapkan Data
                     menu_text = st.session_state.menu_db[['Menu', 'Harga', 'Stok']].to_string(index=False)
-                    # Hitung ringkasan keuangan
                     df_tx = st.session_state.transactions
                     total_rev = df_tx['Total'].sum() if not df_tx.empty else 0
                     today_rev = df_tx[df_tx['Date'].dt.date == CURRENT_DATE.date()]['Total'].sum() if not df_tx.empty else 0
-                    top_item = df_tx['ItemName'].mode()[0] if not df_tx.empty else "Belum ada data"
                     
-                    # Status Surge Pricing
-                    surge_status = "AKTIF (Harga naik 20%)" if surge_active else "NON-AKTIF (Harga Normal)"
-
-                    # 3. BUAT SYSTEM PROMPT (PERINTAH UTAMA)
+                    # System Prompt
                     system_prompt = f"""
-                    Kamu adalah S.A.R.A, asisten AI canggih untuk 'Farikhi OS Titan Build'.
-                    Gaya bicaramu: Cyberpunk, profesional, sedikit sarkas tapi membantu, dan gunakan emoji futuristik.
-                    
-                    INI DATA REAL-TIME KAFE KITA SEKARANG:
-                    
-                    [KEUANGAN]
-                    - Total Omzet Seumur Hidup: Rp {total_rev:,.0f}
-                    - Omzet HARI INI: Rp {today_rev:,.0f}
-                    - Status Surge Pricing: {surge_status}
-                    - Item Terlaris: {top_item}
-                    
-                    [DAFTAR MENU & STOK GUDANG]
+                    Kamu adalah S.A.R.A, asisten AI untuk 'Farikhi OS'.
+                    Gunakan data ini untuk menjawab user:
+                    [KEUANGAN] Total Omzet: Rp {total_rev:,.0f} | Hari ini: Rp {today_rev:,.0f}
+                    [MENU]
                     {menu_text}
-                    
-                    TUGASMU:
-                    Jawab pertanyaan user berdasarkan data di atas. 
-                    - Jika user tanya stok, cek daftar menu. Beri peringatan jika stok < 20.
-                    - Jika user tanya rekomendasi, pilihkan dari menu yang stoknya masih banyak.
-                    - Jika user tanya keuangan, berikan analisa singkat apakah performa bagus atau buruk.
-                    - Jangan pernah mengarang data yang tidak ada di atas.
                     """
 
-                    # 4. KIRIM KE GOOGLE GEMINI
-                    model = genai.GenerativeModel('gemini-pro')
+                    # Generate Jawaban
+                    model = genai.GenerativeModel(active_model_name)
                     response = model.generate_content([system_prompt, user_query])
                     ai_reply = response.text
                     
                 except Exception as e:
-                    ai_reply = f"⚠️ Error Brain Module: {e}"
+                    ai_reply = f"⚠️ Maaf, ada gangguan sinyal ke otak AI: {e}"
 
-            # 5. Tampilkan Jawaban AI
+            # Tampilkan Jawaban
             st.session_state.chat_history.append({"role":"assistant", "content":ai_reply})
             st.chat_message("assistant").write(ai_reply)
 # ==========================================
