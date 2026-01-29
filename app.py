@@ -21,28 +21,38 @@ from oauth2client.service_account import ServiceAccountCredentials
 import google.generativeai as genai
 
 # ==========================================
-# 0. DATABASE ENGINE (GOOGLE SHEETS EDITION - FINAL FIX)
+# 0. DATABASE ENGINE (GOOGLE SHEETS - FINAL STABLE VERSION)
 # ==========================================
 class DatabaseManager:
     def __init__(self):
         try:
-            # 1. Setup Koneksi ke Google Sheets
+            # 1. Setup Scope
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds_dict = dict(st.secrets["gcp_service_account"]) 
+            
+            # 2. Ambil Credentials dari Secrets
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            
+            # --- BAGIAN PERBAIKAN ERROR 500 ---
+            # Kita paksa ubah karakter '\n' menjadi Enter beneran
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            # ----------------------------------
+
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             self.client = gspread.authorize(creds)
             
-            # 2. Buka Spreadsheet
+            # 3. Buka Spreadsheet
+            # Pastikan nama file di Google Sheet SAMA PERSIS (huruf besar/kecil spasi pengaruh)
             self.sheet = self.client.open("Farikhi Titan DB")
             self.ws_menu = self.sheet.worksheet("menu")
             self.ws_tx = self.sheet.worksheet("transactions")
-            # self.ws_users = self.sheet.worksheet("users") 
 
         except Exception as e:
             st.error(f"⚠️ Gagal Konek Google Sheets: {e}")
+            st.warning("Tips: Cek apakah email bot sudah dijadikan EDITOR di file Google Sheet?")
             st.stop()
 
-    # --- FUNGSI BACA DATA (READ) ---
+    # --- FUNGSI BACA DATA (READ - ANTI CRASH) ---
     def load_menu(self):
         try:
             data = self.ws_menu.get_all_records()
@@ -58,58 +68,49 @@ class DatabaseManager:
 
     def load_transactions(self):
         try:
-            # 1. Ambil data dari Google Sheet
+            # Ambil data mentah
             data = self.ws_tx.get_all_records()
             
-            # 2. DEFINISIKAN KOLOM WAJIB (Ini Penyelamatnya!)
-            expected_columns = ['Date', 'ItemID', 'ItemName', 'Category', 'Price', 
-                               'Qty', 'Total', 'Hour', 'CustomerType', 'Payment']
+            # Definisikan Kolom Wajib (Agar tidak error saat data kosong)
+            wajib_ada = ['Date', 'ItemID', 'ItemName', 'Category', 'Price', 
+                        'Qty', 'Total', 'Hour', 'CustomerType', 'Payment']
             
-            # 3. Cek jika data kosong
             if not data:
-                # Kembalikan tabel kosong TAPI dengan nama kolom yang benar
-                return pd.DataFrame(columns=expected_columns)
+                return pd.DataFrame(columns=wajib_ada)
 
-            # 4. Jika ada data, buat DataFrame normal
             df = pd.DataFrame(data)
             
-            # 5. Ganti nama kolom (Google Sheet huruf kecil -> App huruf besar)
-            # Pastikan nama di kiri (lowercase) SAMA PERSIS dengan header di Excel kamu
+            # Rename (Sesuaikan dengan header huruf kecil di Excel kamu)
             df = df.rename(columns={
-                'date': 'Date', 
-                'item_id': 'ItemID', 
-                'item_name': 'ItemName', 
-                'category': 'Category', 
-                'price': 'Price', 
-                'qty': 'Qty', 
-                'total': 'Total', 
-                'hour': 'Hour', 
-                'customer_type': 'CustomerType', 
+                'date': 'Date', 'item_id': 'ItemID', 'item_name': 'ItemName', 
+                'category': 'Category', 'price': 'Price', 'qty': 'Qty', 
+                'total': 'Total', 'hour': 'Hour', 'customer_type': 'CustomerType', 
                 'payment_method': 'Payment'
             })
             
-            # 6. Pastikan kolom 'Total' benar-benar terbentuk setelah rename
+            # Cek ulang apakah kolom Total berhasil dibuat
             if 'Total' not in df.columns:
-                 # Kalau rename gagal (misal header excel salah ketik), paksa buat kolom kosong
-                 return pd.DataFrame(columns=expected_columns)
+                 return pd.DataFrame(columns=wajib_ada)
 
-            # 7. Format Tanggal
             df['Date'] = pd.to_datetime(df['Date'])
-            
             return df
             
         except Exception as e:
-            # Jika error parah, tetap balikin tabel kosong biar app gak mati
+            # Return tabel kosong jika error parah, biar aplikasi tetap jalan
             return pd.DataFrame(columns=['Date', 'ItemID', 'ItemName', 'Category', 'Price', 'Qty', 'Total', 'Hour', 'CustomerType', 'Payment'])
+
     # --- FUNGSI TULIS DATA (WRITE) ---
     def save_transaction(self, tx_data):
-        row = [
-            str(tx_data['Date']), tx_data['ItemID'], tx_data['ItemName'], 
-            tx_data['Category'], tx_data['Price'], tx_data['Qty'], 
-            tx_data['Total'], tx_data['Hour'], tx_data['CustomerType'], 
-            tx_data['Payment']
-        ]
-        self.ws_tx.append_row(row)
+        try:
+            row = [
+                str(tx_data['Date']), tx_data['ItemID'], tx_data['ItemName'], 
+                tx_data['Category'], tx_data['Price'], tx_data['Qty'], 
+                tx_data['Total'], tx_data['Hour'], tx_data['CustomerType'], 
+                tx_data['Payment']
+            ]
+            self.ws_tx.append_row(row)
+        except Exception as e:
+            st.error(f"Gagal simpan transaksi: {e}")
 
     def update_stock(self, item_id, new_stock):
         try:
@@ -117,27 +118,14 @@ class DatabaseManager:
             self.ws_menu.update_cell(cell.row, 6, new_stock) 
         except: pass
 
-    # --- FUNGSI PELENGKAP (AGAR TIDAK ERROR ATTRIBUTE ERROR) ---
-    # Kita biarkan fungsi ini ada tapi kosong (pass), 
-    # karena Kitchen & Meja cukup pakai Session State (RAM) saja biar cepat.
-    
-    def get_kitchen_queue(self):
-        return [] # Return list kosong agar tidak error
+    # --- FUNGSI DUMMY (BIAR TIDAK ERROR DI FITUR DAPUR) ---
+    def get_kitchen_queue(self): return []
+    def add_kitchen_order(self, order): pass
+    def update_kitchen_status(self, oid, stat): pass
+    def get_tables(self): return [{'id': i, 'status': 'Empty'} for i in range(1, 13)]
+    def update_table_status(self, tid, stat): pass
 
-    def add_kitchen_order(self, order):
-        pass # Tidak perlu simpan ke Sheet (biar cepet)
-
-    def update_kitchen_status(self, order_id, status):
-        pass 
-
-    def get_tables(self):
-        # Return 12 meja kosong default
-        return [{'id': i, 'status': 'Empty'} for i in range(1, 13)]
-
-    def update_table_status(self, table_id, status):
-        pass
-
-# Inisialisasi Database
+# Inisialisasi
 db_manager = DatabaseManager()
 
 # ==========================================
