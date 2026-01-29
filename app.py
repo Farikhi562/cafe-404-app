@@ -121,7 +121,7 @@ class DatabaseManager:
         return df
 
     def seed_initial_data(self, initial_menu, initial_tx_df):
-        """Isi data awal dengan cara yang AMAN"""
+        """Isi data awal dengan cara yang AMAN & FIX TIMESTAMP ERROR"""
         conn = self.get_connection()
         c = conn.cursor()
         
@@ -131,7 +131,6 @@ class DatabaseManager:
             if c.fetchone()[0] == 0:
                 print("Seeding Menu...")
                 for item in initial_menu:
-                    # FIX: Sebutkan kolom (id, menu_name, dll)
                     c.execute("""
                         INSERT INTO menu (id, menu_name, price, category, icon, stock) 
                         VALUES (?, ?, ?, ?, ?, ?)
@@ -142,12 +141,15 @@ class DatabaseManager:
             if c.fetchone()[0] == 0:
                 print("Seeding Transactions...")
                 for _, row in initial_tx_df.iterrows():
-                    # FIX: Sebutkan kolom (date, item_id, dll) - JANGAN MASUKKAN 'id' (biar auto)
+                    # --- PERBAIKAN DI SINI ---
+                    # Ubah Pandas Timestamp menjadi Python Datetime standar
+                    tgl_fix = row['Date'].to_pydatetime() 
+                    
                     c.execute("""
                         INSERT INTO transactions 
                         (date, item_id, item_name, category, price, qty, total, hour, customer_type, payment_method) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row['Date'], row['ItemID'], row['ItemName'], row['Category'], 
+                    """, (tgl_fix, row['ItemID'], row['ItemName'], row['Category'], 
                         row['Price'], row['Qty'], row['Total'], row['Hour'], 
                         row['CustomerType'], row['Payment']))
             
@@ -156,7 +158,6 @@ class DatabaseManager:
             st.error(f"Error saat seeding database: {e}")
         finally:
             conn.close()
-
 # Inisialisasi DB Manager
 db_manager = DatabaseManager()
 # ==========================================
