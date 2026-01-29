@@ -1119,8 +1119,39 @@ with tabs[5]:
         'Lifetime Value': ['Rp 15.000.000', 'Rp 0', 'Rp 500.000', 'Rp 300.000']
     }))
 
+# ... (codingan module 5 dan lain-lain di atas) ...
+
 # ==========================================
 # FOOTERs
 # ==========================================
 st.markdown("---")
 st.markdown("<div style='text-align:center; color:#555;'>FARIKHI OS TITAN BUILD v9.9.9 | MACHINE LEARNING ACTIVE | MEMORY USAGE: 402MB</div>", unsafe_allow_html=True)
+
+# ==========================================
+# DEBUGGING ZONE (TARUH DI SINI, PALING BAWAH)
+# ==========================================
+with st.sidebar:
+    st.divider()
+    st.markdown("### 🔓 DATABASE INSPECTOR")
+    
+    # Checkbox rahasia buat buka data
+    if st.checkbox("Show Raw Database"):
+        conn = db_manager.get_connection()
+        
+        st.write("📂 **TABEL MENU (LIVE DB):**")
+        try:
+            # Baca langsung dari SQL
+            df_menu_sql = pd.read_sql("SELECT menu_name, stock FROM menu", conn)
+            st.dataframe(df_menu_sql, height=150)
+        except Exception as e:
+            st.error(f"Gagal baca menu: {e}")
+            
+        st.write("📂 **TABEL TRANSAKSI (LIVE DB):**")
+        try:
+            # Baca 5 transaksi terakhir
+            df_tx_sql = pd.read_sql("SELECT id, item_name, total, date FROM transactions ORDER BY id DESC LIMIT 5", conn)
+            st.dataframe(df_tx_sql, height=150)
+        except Exception as e:
+            st.error(f"Gagal baca transaksi: {e}")
+            
+        conn.close()
