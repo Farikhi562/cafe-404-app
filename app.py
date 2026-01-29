@@ -800,7 +800,7 @@ with tabs[5]:
                     """
 
                     # 4. KIRIM KE GOOGLE GEMINI
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    model = genai.GenerativeModel('gemini-pro')
                     response = model.generate_content([system_prompt, user_query])
                     ai_reply = response.text
                     
