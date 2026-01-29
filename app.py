@@ -17,6 +17,7 @@ import warnings
 import base64
 from fpdf import FPDF
 import sqlite3
+import google.generativeai as genai
 
 # ==========================================
 # 0. DATABASE ENGINE (SQLITE3 WRAPPER) - FIXED VERSION
@@ -730,58 +731,86 @@ tabs = st.tabs([
 # TAB 6: CHATBOT S.A.R.A (SMART VERSION)
 # ==========================================
 with tabs[5]:
-    st.markdown("### 💬 S.A.R.A INTELLIGENCE")
+    st.markdown("### 💬 S.A.R.A INTELLIGENCE (POWERED BY GEMINI)")
     
+    # 1. Konfigurasi API
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    except:
+        st.error("API Key belum disetting! Masukkan GEMINI_API_KEY di secrets.")
+        st.stop()
+
     col_chat, col_info = st.columns([3, 1])
     
     with col_info:
-        st.info("S.A.R.A terhubung ke Database secara Real-Time. Coba tanya: 'omzet hari ini', 'stok', atau 'status surge'.")
+        st.info("🧠 **AI Mode: ACTIVE**\nS.A.R.A sekarang bisa menganalisa data secara mendalam. Tanyakan apa saja!")
+        if st.button("Hapus Chat History"):
+            st.session_state.chat_history = []
+            st.rerun()
     
     with col_chat:
-        # Tampilkan History
+        # Tampilkan History Chat
         for msg in st.session_state.chat_history:
             st.chat_message(msg["role"]).write(msg["content"])
         
-        # Input Chat
-        if p := st.chat_input("Perintah AI..."):
-            # Simpan input user
-            st.session_state.chat_history.append({"role":"user", "content":p})
-            st.chat_message("user").write(p)
+        # Input User
+        if user_query := st.chat_input("Perintah AI..."):
+            # 1. Tampilkan pertanyaan user
+            st.session_state.chat_history.append({"role":"user", "content":user_query})
+            st.chat_message("user").write(user_query)
             
-            # --- OTAK AI S.A.R.A ---
-            resp = "Maaf, saya tidak mengerti. Coba tanya soal Omzet, Stok, atau Surge Pricing."
-            p_low = p.lower()
-            
-            # 1. Cek Omzet Real-time
-            if "omzet" in p_low or "pendapatan" in p_low: 
-                # Hitung ulang omzet detik ini
-                rev = st.session_state.transactions['Total'].sum()
-                today_rev = st.session_state.transactions[
-                    st.session_state.transactions['Date'].dt.date == CURRENT_DATE.date()
-                ]['Total'].sum()
-                resp = f"📊 **Laporan Keuangan:**\n\n- Omzet Hari Ini: **{format_rupiah(today_rev)}**\n- Total Omzet (YTD): **{format_rupiah(rev)}**\n\nTren terlihat positif, Boss."
-            
-            # 2. Cek Status Surge Pricing (Fitur Baru)
-            elif "surge" in p_low or "harga" in p_low:
-                status = "AKTIF (Harga Naik 20%)" if surge_active else "NON-AKTIF (Harga Normal)"
-                resp = f"⚡ **Status Dynamic Pricing:**\n\nSaat ini Surge Pricing sedang **{status}**."
-            
-            # 3. Cek Stok Menipis
-            elif "stok" in p_low:
-                low = st.session_state.menu_db[st.session_state.menu_db['Stok'] < 20]
-                if low.empty: 
-                    resp = "📦 **Status Gudang:** Aman! Semua stok di atas batas aman (20 item)."
-                else: 
-                    list_item = ", ".join(low['Menu'].tolist())
-                    resp = f"⚠️ **PERINGATAN STOK:**\n\nItem berikut menipis: **{list_item}**. Segera restock!"
-            
-            # 4. Sapaan
-            elif "halo" in p_low or "hi" in p_low:
-                resp = "Halo Admin! S.A.R.A siap membantu operasional FARIKHI CAFE 2077."
-            
-            # Simpan & Tampilkan Jawaban AI
-            st.session_state.chat_history.append({"role":"assistant", "content":resp})
-            st.chat_message("assistant").write(resp)
+            with st.spinner("S.A.R.A is thinking..."):
+                try:
+                    # 2. SIAPKAN DATA KONTEKS (INI RAHASIANYA BIAR PINTER)
+                    # Kita ubah data menu & transaksi jadi teks biar bisa dibaca AI
+                    
+                    # Ambil data menu
+                    menu_text = st.session_state.menu_db[['Menu', 'Harga', 'Stok']].to_string(index=False)
+                    
+                    # Hitung ringkasan keuangan
+                    df_tx = st.session_state.transactions
+                    total_rev = df_tx['Total'].sum() if not df_tx.empty else 0
+                    today_rev = df_tx[df_tx['Date'].dt.date == CURRENT_DATE.date()]['Total'].sum() if not df_tx.empty else 0
+                    top_item = df_tx['ItemName'].mode()[0] if not df_tx.empty else "Belum ada data"
+                    
+                    # Status Surge Pricing
+                    surge_status = "AKTIF (Harga naik 20%)" if surge_active else "NON-AKTIF (Harga Normal)"
+
+                    # 3. BUAT SYSTEM PROMPT (PERINTAH UTAMA)
+                    system_prompt = f"""
+                    Kamu adalah S.A.R.A, asisten AI canggih untuk 'Farikhi OS Titan Build'.
+                    Gaya bicaramu: Cyberpunk, profesional, sedikit sarkas tapi membantu, dan gunakan emoji futuristik.
+                    
+                    INI DATA REAL-TIME KAFE KITA SEKARANG:
+                    
+                    [KEUANGAN]
+                    - Total Omzet Seumur Hidup: Rp {total_rev:,.0f}
+                    - Omzet HARI INI: Rp {today_rev:,.0f}
+                    - Status Surge Pricing: {surge_status}
+                    - Item Terlaris: {top_item}
+                    
+                    [DAFTAR MENU & STOK GUDANG]
+                    {menu_text}
+                    
+                    TUGASMU:
+                    Jawab pertanyaan user berdasarkan data di atas. 
+                    - Jika user tanya stok, cek daftar menu. Beri peringatan jika stok < 20.
+                    - Jika user tanya rekomendasi, pilihkan dari menu yang stoknya masih banyak.
+                    - Jika user tanya keuangan, berikan analisa singkat apakah performa bagus atau buruk.
+                    - Jangan pernah mengarang data yang tidak ada di atas.
+                    """
+
+                    # 4. KIRIM KE GOOGLE GEMINI
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    response = model.generate_content([system_prompt, user_query])
+                    ai_reply = response.text
+                    
+                except Exception as e:
+                    ai_reply = f"⚠️ Error Brain Module: {e}"
+
+            # 5. Tampilkan Jawaban AI
+            st.session_state.chat_history.append({"role":"assistant", "content":ai_reply})
+            st.chat_message("assistant").write(ai_reply)
 # ==========================================
 # TAB 7: PUBLIC WEBSITE (NEW)
 # ==========================================
