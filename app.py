@@ -52,19 +52,53 @@ class DatabaseManager:
             st.warning("Tips: Cek apakah email bot sudah dijadikan EDITOR di file Google Sheet?")
             st.stop()
 
-    # --- FUNGSI BACA DATA (READ - ANTI CRASH) ---
+    # --- FUNGSI BACA MENU (ANTI KEYERROR) ---
     def load_menu(self):
         try:
+            # 1. Ambil data
             data = self.ws_menu.get_all_records()
+            
+            # Jika kosong, balikin DataFrame kosong dengan kolom wajib
+            if not data:
+                return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
+
             df = pd.DataFrame(data)
-            if not df.empty:
-                df = df.rename(columns={
-                    'id': 'ID', 'menu_name': 'Menu', 
-                    'price': 'Harga', 'category': 'Kategori', 
-                    'icon': 'Icon', 'stock': 'Stok'
-                })
+            
+            # 2. BERSIHKAN NAMA KOLOM (PENTING!)
+            # Kita paksa semua nama kolom jadi huruf kecil biar tidak error beda casing
+            df.columns = [x.lower().strip() for x in df.columns]
+
+            # 3. Rename ke format Aplikasi (Bahasa Indonesia)
+            # 'menu_name' di sheet -> jadi 'Menu' di aplikasi
+            rename_map = {
+                'id': 'ID',
+                'menu_name': 'Menu',
+                'menu name': 'Menu', # Jaga-jaga kalau gak pake underscore
+                'price': 'Harga',
+                'category': 'Kategori',
+                'icon': 'Icon',
+                'stock': 'Stok'
+            }
+            df = df.rename(columns=rename_map)
+
+            # 4. CEK APAKAH KOLOM 'Kategori' ADA?
+            # Kalau user salah ketik header di Excel, kita buat default
+            if 'Kategori' not in df.columns:
+                df['Kategori'] = 'Uncategorized' # Isi default biar gak crash
+            
+            if 'Menu' not in df.columns:
+                df['Menu'] = 'Unknown Item'
+
+            # 5. Pastikan Harga & Stok berupa Angka
+            df['Harga'] = pd.to_numeric(df['Harga'], errors='coerce').fillna(0)
+            df['Stok'] = pd.to_numeric(df['Stok'], errors='coerce').fillna(0)
+
             return df
-        except: return pd.DataFrame()
+            
+        except Exception as e:
+            # Kalau error parah, return dataframe kosong biar aplikasi jalan terus
+            st.error(f"Error Load Menu: {e}")
+            return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
 
     def load_transactions(self):
         try:
