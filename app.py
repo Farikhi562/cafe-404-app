@@ -54,22 +54,24 @@ class DatabaseManager:
 
     # --- FUNGSI BACA MENU (ANTI KEYERROR) ---
     # --- FUNGSI BACA MENU (VERSION 3.0: ANTI HEADER DUPLIKAT) ---
+    # --- FUNGSI BACA MENU (FIXED VERSION) ---
     def load_menu(self):
         try:
-            # Kita pakai get_all_values (ambil mentahnya aja) biar gak error header kosong
+            # Kita pakai get_all_values (ambil mentahnya aja)
             all_rows = self.ws_menu.get_all_values()
             
             # Cek data kosong
             if not all_rows or len(all_rows) < 2:
+                # Perbaikan: Hapus satu tanda kurung ')' di ujung baris bawah ini
                 return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
 
             # Baris 0 adalah Header, Baris 1 dst adalah Data
-            headers = [h.strip().lower() for h in all_rows[0]] # Kecilin semua huruf header
+            headers = [h.strip().lower() for h in all_rows[0]] 
             data = all_rows[1:]
 
             df = pd.DataFrame(data, columns=headers)
 
-            # Buang kolom yang headernya kosong (penyebab error tadi)
+            # Buang kolom yang headernya kosong
             df = df.loc[:, df.columns != '']
 
             # Rename ke format Aplikasi
@@ -84,12 +86,11 @@ class DatabaseManager:
             }
             df = df.rename(columns=rename_map)
 
-            # Default value jika kolom hilang
+            # Default value
             if 'Kategori' not in df.columns: df['Kategori'] = 'Uncategorized'
             if 'Menu' not in df.columns: df['Menu'] = 'Unknown Item'
 
-            # Konversi Angka (Penting!)
-            # Hapus 'Rp' atau koma kalau ada user iseng nulis manual
+            # Konversi Angka
             for col in ['Harga', 'Stok']:
                 if col in df.columns:
                     df[col] = df[col].astype(str).str.replace(r'[^\d]', '', regex=True)
@@ -99,8 +100,9 @@ class DatabaseManager:
             
         except Exception as e:
             st.error(f"Error Load Menu: {e}")
-            return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok']))
-
+            # Perbaikan: Pastikan kurungnya cuma satu di ujung
+            return pd.DataFrame(columns=['ID', 'Menu', 'Harga', 'Kategori', 'Icon', 'Stok'])
+            
     def load_transactions(self):
         try:
             # Ambil data mentah
